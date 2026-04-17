@@ -15,7 +15,7 @@ import { walletAPI } from '../services/api';
  */
 export function useUsdInr() {
   const { prices } = useSocket();
-  const [serverRate, setServerRate] = useState(83);
+  const [serverRate, setServerRate] = useState(90);
   const [markup, setMarkup] = useState(0);
 
   useEffect(() => {
