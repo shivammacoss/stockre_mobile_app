@@ -1,0 +1,72 @@
+import 'dotenv/config';
+
+export default {
+  expo: {
+    name: "Stocktre",
+    slug: "StocktreExpo",
+    version: "1.0.0",
+    orientation: "portrait",
+    icon: "./assets/app-icon.png",
+    userInterfaceStyle: "dark",
+    // New Architecture disabled for now — it causes Gradle build failures
+    // with several community native modules (socket.io-client, webview) on
+    // SDK 54. Re-enable once all deps are Fabric-ready.
+    newArchEnabled: false,
+    // OTA updates are tied to the native version — bump `version` above
+    // whenever package.json changes require a new APK.
+    runtimeVersion: { policy: "appVersion" },
+    updates: {
+      enabled: true,
+      checkAutomatically: "ON_LOAD",
+      fallbackToCacheTimeout: 0,
+      url: "https://u.expo.dev/8ad6ff69-6a82-4d11-bf19-b7a203f8a4a0",
+      // Tells the APK which EAS Update branch to follow. Override at build
+      // time via EXPO_UPDATES_CHANNEL env var if you want a single codebase
+      // to produce different-channel APKs.
+      requestHeaders: {
+        "expo-channel-name": process.env.EXPO_UPDATES_CHANNEL || "preview",
+      },
+    },
+    splash: {
+      image: "./assets/app-icon.png",
+      resizeMode: "contain",
+      backgroundColor: "#0d0e10",
+    },
+    ios: {
+      supportsTablet: true,
+      bundleIdentifier: "com.stocktre.app",
+      icon: "./assets/app-icon.png",
+    },
+    android: {
+      icon: "./assets/app-icon.png",
+      adaptiveIcon: {
+        foregroundImage: "./assets/app-icon.png",
+        backgroundColor: "#0d0e10",
+      },
+      edgeToEdgeEnabled: true,
+      package: "com.stocktre.app",
+      // Allow cleartext HTTP only for local dev (API_URL=http://...).
+      // Production builds use HTTPS and should NOT allow cleartext.
+      usesCleartextTraffic: (process.env.API_URL || '').startsWith('http://'),
+    },
+    web: {
+      favicon: "./assets/app-icon.png",
+    },
+    plugins: [
+      "expo-secure-store",
+      "expo-updates",
+    ],
+    extra: {
+      // Environment variables from .env file
+      apiUrl: process.env.API_URL,
+      wsUrl: process.env.WS_URL,
+      chartLibUrl: process.env.CHART_LIB_URL,
+      appName: process.env.APP_NAME || "Stocktre",
+      appVersion: process.env.APP_VERSION || "1.0.0",
+      eas: {
+        projectId: "8ad6ff69-6a82-4d11-bf19-b7a203f8a4a0",
+      },
+    },
+    owner: "shivam92388",
+  },
+};
