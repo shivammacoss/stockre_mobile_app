@@ -38,29 +38,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const loadStoredUser = async () => {
     try {
-      const [storedUser, token] = await Promise.all([
-        SecureStore.getItemAsync('user'),
-        SecureStore.getItemAsync('authToken'),
+      // Always clear stored session on app launch — user must re-login
+      // each time the app is opened (matches web sessionStorage behavior).
+      await Promise.all([
+        SecureStore.deleteItemAsync('user'),
+        SecureStore.deleteItemAsync('authToken'),
       ]);
-
-      if (storedUser && token) {
-        setUser(JSON.parse(storedUser));
-        // Verify token is still valid
-        try {
-          const response = await authAPI.getProfile();
-          if (response.data?.user) {
-            setUser(response.data.user);
-            await SecureStore.setItemAsync('user', JSON.stringify(response.data.user));
-          }
-        } catch (error) {
-          // Token invalid, clear storage
-          await SecureStore.deleteItemAsync('user');
-          await SecureStore.deleteItemAsync('authToken');
-          setUser(null);
-        }
-      }
+      setUser(null);
     } catch (error) {
-      console.error('Error loading stored user:', error);
+      console.error('Error clearing stored user:', error);
     } finally {
       setIsLoading(false);
     }
