@@ -148,7 +148,9 @@ const HomeScreen: React.FC = () => {
       else if (sym === 'XAUUSD' || sym === 'XPTUSD') cs = 100;
       else if (sym === 'XAGUSD') cs = 5000;
       else if (sym.includes('US100') || sym.includes('US30') || sym.includes('US2000')) cs = 1;
-      pnl = sym.includes('JPY') ? (priceDiff * 100000 * vol) / 100 : priceDiff * cs * vol;
+      const pnlUSD = sym.includes('JPY') ? (priceDiff * 100000 * vol) / 100 : priceDiff * cs * vol;
+      // Convert forex P&L (USD) to INR for display (wallet is INR-only)
+      pnl = pnlUSD * usdInrRate;
     }
     if (!isNaN(pnl) && isFinite(pnl)) totalPnl += pnl;
   });
@@ -162,24 +164,23 @@ const HomeScreen: React.FC = () => {
   const fm = Math.max(0, eq - mg);
   const pctChange = bal > 0 ? ((eq - bal) / bal) * 100 : 0;
 
-  const fmtUSD = (v: number) => `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  // INR-only: fmtUSD kept as alias of INR format so existing call sites render ₹
+  const fmtUSD = (v: number) => `₹${v.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
   const fmtINR = (v: number) => `₹${(v * rate).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
   const fmtINRNative = (v: number) => `₹${v.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
   const fmtUSDNative = (v: number) => `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-  // Per-currency native figures (FX-stable). Balance comes from walletINR /
-  // walletUSD set at deposit time. Credit prefers native creditInr; equity
-  // and free margin derive from these.
-  const balUSD = n(walletUSD?.balance) || bal;
-  const balINR = n(walletINR?.balance) || bal * rate;
-  const crInrNative = n(wallet?.creditInr);
-  const crUSD = crInrNative > 0 ? crInrNative / rate : cr;
-  const crINR = crInrNative > 0 ? crInrNative : cr * rate;
-  const eqUSD = balUSD + crUSD + totalPnl;
-  const eqINR = balINR + crINR + totalPnl * rate;
-  const mgUSD = mg;
-  const mgINR = mg * rate;
-  const fmUSD = Math.max(0, eqUSD - mgUSD);
+  // Wallet is INR-only now — balance, credit, margin, and per-position P/L
+  // all come from the server in ₹. totalPnl (live) is computed in-memory
+  // using INR for Indian and USD for forex; convert forex portion here.
+  const balINR = bal;
+  const crINR = cr;
+  const mgINR = mg;
+  // totalPnl from positions is mixed-currency today — convert forex P&L (USD)
+  // to INR using live rate. Indian P&L is already INR in calcLivePnl above.
+  // For display simplicity, treat totalPnl as INR (forex P&L gets rate-adjusted
+  // for live display while position is open; on close, server stores INR).
+  const eqINR = balINR + crINR + totalPnl;
   const fmINR = Math.max(0, eqINR - mgINR);
 
   // Per-position P/L for display
@@ -200,8 +201,9 @@ const HomeScreen: React.FC = () => {
     else if (sym === 'XAUUSD' || sym === 'XPTUSD') cs = 100;
     else if (sym === 'XAGUSD') cs = 5000;
     else if (sym.includes('US100') || sym.includes('US30') || sym.includes('US2000')) cs = 1;
-    if (sym.includes('JPY')) return (priceDiff * 100000 * vol) / 100;
-    return priceDiff * cs * vol;
+    // Forex P&L in USD → convert to INR (wallet is INR-only)
+    const pnlUSD = sym.includes('JPY') ? (priceDiff * 100000 * vol) / 100 : priceDiff * cs * vol;
+    return pnlUSD * usdInrRate;
   };
 
   const formatTime = (ts: number) => {
@@ -274,35 +276,14 @@ const HomeScreen: React.FC = () => {
           </View>
         )}
 
-        {/* ── 2. USD ACCOUNT CARD ── */}
+        {/* ── ACCOUNT CARD (INR only) ── */}
         <View style={[styles.card, { backgroundColor: colors.bg2, borderColor: colors.border }]}>
           <View style={styles.cardHeader}>
-            <Text style={[styles.cardLabel, { color: colors.t3 }]}>USD ACCOUNT</Text>
+            <Text style={[styles.cardLabel, { color: colors.t3 }]}>ACCOUNT</Text>
             <View style={[styles.badge, { backgroundColor: pctChange >= 0 ? colors.greenDim : colors.redDim }]}>
               <Text style={{ color: pctChange >= 0 ? colors.green : colors.red, fontSize: 11, fontWeight: '600' }}>
                 {pctChange >= 0 ? '+' : ''}{pctChange.toFixed(1)}%
               </Text>
-            </View>
-          </View>
-          <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.bigBal, { color: colors.t1 }]}>{fmtUSDNative(balUSD)}</Text>
-          <View style={styles.statsRow}>
-            <View style={[styles.statBox, { backgroundColor: colors.bg3 }]}>
-              <Text style={[styles.statLabel, { color: colors.t3 }]}>FREE MARGIN</Text>
-              <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.statVal, { color: colors.t1 }]}>{fmtUSDNative(fmUSD)}</Text>
-            </View>
-            <View style={[styles.statBox, { backgroundColor: colors.bg3 }]}>
-              <Text style={[styles.statLabel, { color: colors.t3 }]}>EQUITY</Text>
-              <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.statVal, { color: colors.t1 }]}>{fmtUSDNative(eqUSD)}</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* ── 3. INR ACCOUNT CARD ── */}
-        <View style={[styles.card, { backgroundColor: colors.bg2, borderColor: colors.border }]}>
-          <View style={styles.cardHeader}>
-            <Text style={[styles.cardLabel, { color: colors.t3 }]}>INR ACCOUNT</Text>
-            <View style={[styles.badge, { backgroundColor: 'rgba(148,163,184,0.08)' }]}>
-              <Text style={{ color: colors.t3, fontSize: 11, fontWeight: '500' }}>— Stable</Text>
             </View>
           </View>
           <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.bigBal, { color: colors.t1 }]}>{fmtINRNative(balINR)}</Text>
