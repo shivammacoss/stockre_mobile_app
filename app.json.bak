@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Stocktre",
-    "slug": "StocktreExpo",
+    "slug": "Stock4xExpo",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/app-icon.png",

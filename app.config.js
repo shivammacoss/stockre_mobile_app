@@ -3,7 +3,11 @@ import 'dotenv/config';
 export default {
   expo: {
     name: "Stocktre",
-    slug: "StocktreExpo",
+    // Slug is an internal Expo identifier tied to the existing projectId
+    // (created pre-whitelabel as Stock4xExpo). Cannot be changed without
+    // issuing a new projectId + breaking OTA updates. User-facing name,
+    // bundleId, and package all show `Stocktre`.
+    slug: "Stock4xExpo",
     version: "1.0.0",
     orientation: "portrait",
     icon: "./assets/app-icon.png",
