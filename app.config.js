@@ -19,17 +19,12 @@ export default {
     // OTA updates are tied to the native version — bump `version` above
     // whenever package.json changes require a new APK.
     runtimeVersion: { policy: "appVersion" },
+    // EAS Update temporarily disabled — will re-enable with new account's URL
+    // after `eas init` + `eas update:configure` under owner "stockre".
     updates: {
-      enabled: true,
+      enabled: false,
       checkAutomatically: "ON_LOAD",
       fallbackToCacheTimeout: 0,
-      url: "https://u.expo.dev/8ad6ff69-6a82-4d11-bf19-b7a203f8a4a0",
-      // Tells the APK which EAS Update branch to follow. Override at build
-      // time via EXPO_UPDATES_CHANNEL env var if you want a single codebase
-      // to produce different-channel APKs.
-      requestHeaders: {
-        "expo-channel-name": process.env.EXPO_UPDATES_CHANNEL || "preview",
-      },
     },
     splash: {
       image: "./assets/app-icon.png",
@@ -67,10 +62,11 @@ export default {
       chartLibUrl: process.env.CHART_LIB_URL,
       appName: process.env.APP_NAME || "Stocktre",
       appVersion: process.env.APP_VERSION || "1.0.0",
+      // projectId will be filled by `eas init` on first run under the new owner
       eas: {
-        projectId: "8ad6ff69-6a82-4d11-bf19-b7a203f8a4a0",
+        projectId: "",
       },
     },
-    owner: "shivam92388",
+    owner: "stockre",
   },
 };
