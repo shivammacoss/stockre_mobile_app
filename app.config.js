@@ -62,9 +62,8 @@ export default {
       chartLibUrl: process.env.CHART_LIB_URL,
       appName: process.env.APP_NAME || "Stocktre",
       appVersion: process.env.APP_VERSION || "1.0.0",
-      // projectId will be filled by `eas init` on first run under the new owner
       eas: {
-        projectId: "",
+        projectId: "afe771a2-0b1a-4a4f-98b5-3bfbc5721796",
       },
     },
     owner: "stockre",
