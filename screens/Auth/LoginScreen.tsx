@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../theme/ThemeContext';
+import { API_URL } from '../../config';
 
 const logo = require('../../assets/stocktre-logo.png');
 
@@ -27,6 +28,25 @@ const LoginScreen: React.FC = () => {
     const result = await login(username.trim(), password);
     if (!result.success) {
       Alert.alert('Login Failed', result.error || 'Invalid credentials');
+    }
+  };
+
+  // Diagnostic: show the API URL the APK is using and try a ping.
+  // Remove this button once login is confirmed working.
+  const handleTestConnection = async () => {
+    const urlToHit = `${API_URL}/api/exchange-rate`;
+    try {
+      const res = await fetch(urlToHit);
+      const body = await res.text();
+      Alert.alert(
+        'Connection Test',
+        `URL: ${urlToHit}\n\nStatus: ${res.status}\n\nBody (first 200 chars):\n${body.slice(0, 200)}`
+      );
+    } catch (e: any) {
+      Alert.alert(
+        'Connection Test FAILED',
+        `URL: ${urlToHit}\n\nError: ${e?.message || String(e)}`
+      );
     }
   };
 
@@ -122,6 +142,15 @@ const LoginScreen: React.FC = () => {
           <Text style={{ color: colors.t3, fontSize: 10, textAlign: 'center', marginTop: 20 }}>
             By continuing you agree to our Terms & Privacy Policy
           </Text>
+
+          {/* DIAGNOSTIC — tap to show the API URL this APK is using + ping it */}
+          <TouchableOpacity
+            onPress={handleTestConnection}
+            style={{ marginTop: 16, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: colors.border, alignItems: 'center' }}
+          >
+            <Text style={{ color: colors.t3, fontSize: 11 }}>🔧 Test API Connection</Text>
+            <Text style={{ color: colors.t3, fontSize: 9, marginTop: 2 }}>{API_URL}</Text>
+          </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
