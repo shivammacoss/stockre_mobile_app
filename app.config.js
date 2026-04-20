@@ -29,7 +29,7 @@ export default {
     splash: {
       image: "./assets/app-icon.png",
       resizeMode: "contain",
-      backgroundColor: "#0d0e10",
+      backgroundColor: "#ffffff",
     },
     ios: {
       supportsTablet: true,
@@ -39,8 +39,8 @@ export default {
     android: {
       icon: "./assets/app-icon.png",
       adaptiveIcon: {
-        foregroundImage: "./assets/app-icon.png",
-        backgroundColor: "#0d0e10",
+        foregroundImage: "./assets/adaptive-icon.png",
+        backgroundColor: "#ffffff",
       },
       edgeToEdgeEnabled: true,
       package: "com.stocktre.app",
