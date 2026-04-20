@@ -16,21 +16,24 @@ import { useNavigation } from '@react-navigation/native';
 const SW = Dimensions.get('window').width;
 const SH = Dimensions.get('window').height;
 
-// All segment categories matching the web client exactly (Image 1)
+// Segment order matches the web client: Favourites → Indian → Crypto → International.
 const SEGMENT_TABS = [
   { key: 'FAVOURITES', label: '★ Favourites' },
-  { key: 'Forex', label: 'Forex' },
-  { key: 'Stocks (International)', label: 'Stocks' },
-  { key: 'Indices', label: 'Indices' },
-  { key: 'Commodities', label: 'Commodities' },
-  { key: 'Crypto Perpetual', label: 'Crypto' },
-  { key: 'Crypto Options', label: 'Options' },
+  // Indian markets first (per product spec — matches MarketPage.jsx)
   { key: 'NSE EQ', label: 'NSE EQ' },
   { key: 'NSE FUT', label: 'NSE FUT' },
   { key: 'NSE OPT', label: 'NSE OPT' },
   { key: 'BSE EQ', label: 'BSE EQ' },
   { key: 'MCX FUT', label: 'MCX FUT' },
   { key: 'MCX OPT', label: 'MCX OPT' },
+  // Crypto
+  { key: 'Crypto Perpetual', label: 'Crypto' },
+  { key: 'Crypto Options', label: 'Options' },
+  // International
+  { key: 'Forex', label: 'Forex' },
+  { key: 'Stocks (International)', label: 'Stocks' },
+  { key: 'Indices', label: 'Indices' },
+  { key: 'Commodities', label: 'Commodities' },
 ];
 
 // Default instruments (same as web userConfig.js)
