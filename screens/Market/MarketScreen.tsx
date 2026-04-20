@@ -715,25 +715,40 @@ const MarketScreen: React.FC = () => {
             <Pressable style={{ flex: 1 }} onPress={closeSheet} />
           </Animated.View>
           <Animated.View style={[styles.sheetContent, { backgroundColor: colors.bg1, transform: [{ translateY: sheetAnim }] }]}>
-            {/* Handle + close — swipe down to dismiss */}
+            {/* Handle + chart + close — swipe down to dismiss */}
             <View {...sheetPanResponder.panHandlers} style={styles.sheetHeader}>
               <View style={[styles.handleBar, { backgroundColor: colors.t3 }]} />
-              <Pressable onPress={closeSheet} style={{ position: 'absolute', right: 16, top: 10 }} hitSlop={12}>
-                <Ionicons name="close" size={24} color={colors.t2} />
-              </Pressable>
+              <View style={{ position: 'absolute', right: 12, top: 6, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Pressable
+                  onPress={() => { closeSheet(); openChartForSymbol(orderSymbol); }}
+                  style={[styles.sheetIconBtn, { backgroundColor: colors.bg3, borderColor: colors.border }]}
+                  hitSlop={8}
+                >
+                  <Ionicons name="stats-chart" size={16} color={colors.blue} />
+                </Pressable>
+                <Pressable onPress={closeSheet} style={{ padding: 8 }} hitSlop={8}>
+                  <Ionicons name="close" size={22} color={colors.t2} />
+                </Pressable>
+              </View>
             </View>
 
-            {/* Symbol header */}
+            {/* Symbol header + OHLC/LTP row */}
             <View style={[styles.sheetSymbolHeader, { borderBottomColor: colors.border }]}>
-              <Text style={{ color: colors.t1, fontSize: 20, fontWeight: '800', letterSpacing: 0.3 }}>{orderSymbol}</Text>
-              <View style={{ flexDirection: 'row', gap: 14 }}>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={{ color: colors.t3, fontSize: 9, fontWeight: '600', letterSpacing: 0.5 }}>BID</Text>
-                  <Text style={{ color: '#ef4444', fontSize: 15, fontWeight: '800' }}>{fmtP(orderSymbol, orderPrice?.bid)}</Text>
+              <Text style={{ color: colors.t1, fontSize: 20, fontWeight: '800', letterSpacing: 0.3, marginBottom: 8 }} numberOfLines={1}>{orderSymbol}</Text>
+              <View style={styles.ohlcRow}>
+                <View style={styles.ohlcCell}>
+                  <Text style={[styles.ohlcLabel, { color: colors.t3 }]}>LTP</Text>
+                  <Text style={[styles.ohlcValue, { color: colors.t1 }]}>{fmtP(orderSymbol, orderPrice?.lastPrice ?? orderPrice?.bid)}</Text>
                 </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={{ color: colors.t3, fontSize: 9, fontWeight: '600', letterSpacing: 0.5 }}>ASK</Text>
-                  <Text style={{ color: '#22c55e', fontSize: 15, fontWeight: '800' }}>{fmtP(orderSymbol, orderPrice?.ask)}</Text>
+                <View style={[styles.ohlcDivider, { backgroundColor: colors.border }]} />
+                <View style={styles.ohlcCell}>
+                  <Text style={[styles.ohlcLabel, { color: colors.t3 }]}>DAY HIGH</Text>
+                  <Text style={[styles.ohlcValue, { color: '#22c55e' }]}>{fmtP(orderSymbol, orderPrice?.high)}</Text>
+                </View>
+                <View style={[styles.ohlcDivider, { backgroundColor: colors.border }]} />
+                <View style={styles.ohlcCell}>
+                  <Text style={[styles.ohlcLabel, { color: colors.t3 }]}>DAY LOW</Text>
+                  <Text style={[styles.ohlcValue, { color: '#ef4444' }]}>{fmtP(orderSymbol, orderPrice?.low)}</Text>
                 </View>
               </View>
             </View>
@@ -948,6 +963,7 @@ const MarketScreen: React.FC = () => {
                     const vol = parseFloat(volume) || 0;
                     const notional = ep * vol;
                     const intraday = notional > 0 ? `₹${notional.toFixed(2)}` : '—';
+                    const available = Number(walletINR?.balance || 0);
                     return (
                       <View style={[styles.marginCard, { backgroundColor: colors.bg2, borderColor: colors.border }]}>
                         <View style={styles.marginRow}>
@@ -962,6 +978,13 @@ const MarketScreen: React.FC = () => {
                         <View style={styles.marginRow}>
                           <Text style={{ color: colors.t3, fontSize: 11 }}>Carryforward Margin</Text>
                           <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700' }}>{intraday}</Text>
+                        </View>
+                        <View style={[styles.marginDivider, { backgroundColor: colors.border }]} />
+                        <View style={styles.marginRow}>
+                          <Text style={{ color: colors.t2, fontSize: 11, fontWeight: '600' }}>Available Margin</Text>
+                          <Text style={{ color: colors.t1, fontSize: 14, fontWeight: '800' }}>
+                            ₹{available.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </Text>
                         </View>
                       </View>
                     );
@@ -1115,7 +1138,13 @@ const styles = StyleSheet.create({
   marginCard: { borderRadius: 12, borderWidth: 1, padding: 14, marginTop: 10, marginBottom: 16 },
   marginRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 },
   marginDivider: { height: 1, marginVertical: 6 },
-  sheetSymbolHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 1 },
+  sheetSymbolHeader: { paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 1 },
+  sheetIconBtn: { width: 32, height: 32, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  ohlcRow: { flexDirection: 'row', alignItems: 'center' },
+  ohlcCell: { flex: 1 },
+  ohlcLabel: { fontSize: 9, fontWeight: '600', letterSpacing: 0.5, marginBottom: 2 },
+  ohlcValue: { fontSize: 13, fontWeight: '700' },
+  ohlcDivider: { width: 1, height: 24, marginHorizontal: 8 },
 });
 
 export default MarketScreen;
