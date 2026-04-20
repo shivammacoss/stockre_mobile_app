@@ -346,6 +346,10 @@ const OrdersScreen: React.FC = () => {
   };
 
   const totalPnl = positions.reduce((s, p) => s + calcLivePnl(p), 0);
+  const marginUsed = positions.reduce((s, p) => s + Number(p.marginUsed || p.margin || 0), 0);
+  const ledgerBalance = Number(walletINR?.balance || 0);
+  // Available = deposited funds minus margin locked in open trades, plus live M2M.
+  const marginAvailable = ledgerBalance - marginUsed + totalPnl;
 
   const remarkColor = (r: string) => {
     if (!r) return colors.t3;
@@ -485,12 +489,34 @@ const OrdersScreen: React.FC = () => {
         })}
       </View>
 
-      {/* Total P/L (open tab) */}
-      {tab === 'open' && positions.length > 0 && (
-        <View style={{ paddingHorizontal: 12, paddingVertical: 4, alignItems: 'flex-end' }}>
-          <Text style={{ color: totalPnl >= 0 ? colors.green : colors.red, fontSize: 13, fontWeight: '700' }}>
-            Total P/L: {formatTotalPnl(totalPnl)}
-          </Text>
+      {/* Account summary — ledger, available, used, M2M (shown on open tab) */}
+      {tab === 'open' && (
+        <View style={[styles.summaryCard, { backgroundColor: colors.bg2, borderColor: colors.border }]}>
+          <View style={styles.summaryRow}>
+            <View style={styles.summaryCell}>
+              <Text style={[styles.summaryLabel, { color: colors.t3 }]}>LEDGER BAL</Text>
+              <Text style={[styles.summaryValue, { color: colors.t1 }]}>₹{ledgerBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
+            </View>
+            <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
+            <View style={styles.summaryCell}>
+              <Text style={[styles.summaryLabel, { color: colors.t3 }]}>MARGIN AVAIL</Text>
+              <Text style={[styles.summaryValue, { color: colors.blue }]}>₹{marginAvailable.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
+            </View>
+          </View>
+          <View style={[styles.summaryHDivider, { backgroundColor: colors.border }]} />
+          <View style={styles.summaryRow}>
+            <View style={styles.summaryCell}>
+              <Text style={[styles.summaryLabel, { color: colors.t3 }]}>MARGIN USED</Text>
+              <Text style={[styles.summaryValue, { color: colors.t1 }]}>₹{marginUsed.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
+            </View>
+            <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
+            <View style={styles.summaryCell}>
+              <Text style={[styles.summaryLabel, { color: colors.t3 }]}>M2M</Text>
+              <Text style={[styles.summaryValue, { color: totalPnl >= 0 ? colors.green : colors.red }]}>
+                {totalPnl >= 0 ? '+' : ''}{formatTotalPnl(totalPnl)}
+              </Text>
+            </View>
+          </View>
         </View>
       )}
 
@@ -823,6 +849,14 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   tabBar: { flexDirection: 'row', marginHorizontal: 12, marginVertical: 8, padding: 3, borderRadius: 12, borderWidth: 1 },
   tabPill: { flex: 1, paddingVertical: 8, borderRadius: 9, alignItems: 'center' },
+
+  summaryCard: { marginHorizontal: 12, marginTop: 4, marginBottom: 10, padding: 12, borderRadius: 12, borderWidth: 1 },
+  summaryRow: { flexDirection: 'row', alignItems: 'center' },
+  summaryCell: { flex: 1 },
+  summaryLabel: { fontSize: 9, fontWeight: '700', letterSpacing: 0.5, marginBottom: 3 },
+  summaryValue: { fontSize: 14, fontWeight: '800' },
+  summaryDivider: { width: 1, height: 30, marginHorizontal: 10 },
+  summaryHDivider: { height: 1, marginVertical: 10 },
 
   card: { borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1 },
   cardHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
