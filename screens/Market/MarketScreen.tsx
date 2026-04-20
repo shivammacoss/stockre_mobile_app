@@ -724,45 +724,50 @@ const MarketScreen: React.FC = () => {
             </View>
 
             {/* Symbol header */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 8 }}>
-              <Text style={{ color: colors.t1, fontSize: 18, fontWeight: '700' }}>{orderSymbol}</Text>
-              <View style={{ flexDirection: 'row', gap: 12 }}>
+            <View style={[styles.sheetSymbolHeader, { borderBottomColor: colors.border }]}>
+              <Text style={{ color: colors.t1, fontSize: 20, fontWeight: '800', letterSpacing: 0.3 }}>{orderSymbol}</Text>
+              <View style={{ flexDirection: 'row', gap: 14 }}>
                 <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={{ color: colors.t3, fontSize: 9 }}>BID</Text>
-                  <Text style={{ color: '#ef4444', fontSize: 14, fontWeight: '700' }}>{fmtP(orderSymbol, orderPrice?.bid)}</Text>
+                  <Text style={{ color: colors.t3, fontSize: 9, fontWeight: '600', letterSpacing: 0.5 }}>BID</Text>
+                  <Text style={{ color: '#ef4444', fontSize: 15, fontWeight: '800' }}>{fmtP(orderSymbol, orderPrice?.bid)}</Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={{ color: colors.t3, fontSize: 9 }}>ASK</Text>
-                  <Text style={{ color: '#22c55e', fontSize: 14, fontWeight: '700' }}>{fmtP(orderSymbol, orderPrice?.ask)}</Text>
+                  <Text style={{ color: colors.t3, fontSize: 9, fontWeight: '600', letterSpacing: 0.5 }}>ASK</Text>
+                  <Text style={{ color: '#22c55e', fontSize: 15, fontWeight: '800' }}>{fmtP(orderSymbol, orderPrice?.ask)}</Text>
                 </View>
               </View>
             </View>
 
             <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 50 }} keyboardShouldPersistTaps="handled" bounces={false} showsVerticalScrollIndicator={true}>
-              {/* ── Trading mode tabs (hedging hidden for Indian symbols) ── */}
-              <View style={{ flexDirection: 'row', marginBottom: 14, gap: 8 }}>
-                {[
+              {/* Trading mode tabs — only rendered when there's a real choice to make */}
+              {(() => {
+                const modes = [
                   { key: 'hedging', icon: 'swap-horizontal', label: 'Hedging' },
                   { key: 'netting', icon: 'stats-chart', label: 'Netting' },
                   { key: 'binary', icon: 'diamond-outline', label: 'Binary' },
                 ]
-                .filter(m => allowedTradeModes[m.key as keyof typeof allowedTradeModes])
-                .filter(m => !(m.key === 'hedging' && isOrderIndian))
-                .map(mode => (
-                  <TouchableOpacity
-                    key={mode.key}
-                    style={[styles.modeTab, { backgroundColor: colors.bg3 }, tradingMode === mode.key && { backgroundColor: colors.blue }]}
-                    onPress={() => setTradingMode(mode.key)}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                      <Ionicons name={mode.icon as any} size={14} color={tradingMode === mode.key ? '#fff' : colors.t2} />
-                      <Text style={{ color: tradingMode === mode.key ? '#fff' : colors.t2, fontSize: 12, fontWeight: '600' }}>
-                        {mode.label}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </View>
+                  .filter(m => allowedTradeModes[m.key as keyof typeof allowedTradeModes])
+                  .filter(m => !(m.key === 'hedging' && isOrderIndian));
+                if (modes.length < 2) return null;
+                return (
+                  <View style={{ flexDirection: 'row', marginBottom: 14, gap: 8 }}>
+                    {modes.map(mode => (
+                      <TouchableOpacity
+                        key={mode.key}
+                        style={[styles.modeTab, { backgroundColor: colors.bg3 }, tradingMode === mode.key && { backgroundColor: colors.blue }]}
+                        onPress={() => setTradingMode(mode.key)}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <Ionicons name={mode.icon as any} size={14} color={tradingMode === mode.key ? '#fff' : colors.t2} />
+                          <Text style={{ color: tradingMode === mode.key ? '#fff' : colors.t2, fontSize: 12, fontWeight: '600' }}>
+                            {mode.label}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                );
+              })()}
 
               {/* ═══════════ HEDGING MODE ═══════════ */}
               {tradingMode === 'hedging' && (
@@ -839,24 +844,47 @@ const MarketScreen: React.FC = () => {
               {/* ═══════════ NETTING MODE ═══════════ */}
               {tradingMode === 'netting' && (
                 <>
-                  {/* Order type: Market / Limit / SL-M */}
-                  <View style={{ flexDirection: 'row', marginBottom: 14, gap: 6 }}>
+                  {/* Order type segmented control */}
+                  <View style={[styles.segGroup, { backgroundColor: colors.bg3 }]}>
                     {[{ key: 'market', label: 'Market' }, { key: 'limit', label: 'Limit' }, { key: 'slm', label: 'SL-M' }].map(t => (
-                      <TouchableOpacity key={t.key} style={[styles.orderTypeTab, { backgroundColor: colors.bg3 }, orderType === t.key && { backgroundColor: colors.blue }]} onPress={() => setOrderType(t.key)}>
-                        <Text style={{ color: orderType === t.key ? '#fff' : colors.t3, fontSize: 13, fontWeight: '600' }}>{t.label}</Text>
+                      <TouchableOpacity key={t.key} style={[styles.segTab, orderType === t.key && { backgroundColor: colors.blue }]} onPress={() => setOrderType(t.key)} activeOpacity={0.85}>
+                        <Text style={{ color: orderType === t.key ? '#fff' : colors.t2, fontSize: 13, fontWeight: '600' }}>{t.label}</Text>
                       </TouchableOpacity>
                     ))}
                   </View>
-                  {/* SELL / spread / BUY */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-                    <TouchableOpacity style={[styles.sideBtn, { backgroundColor: orderSide === 'sell' ? '#ef4444' : 'rgba(239,68,68,0.12)', borderColor: '#ef4444' }]} onPress={() => setOrderSide('sell')}>
-                      <Text style={{ color: orderSide === 'sell' ? '#fff' : '#ef4444', fontSize: 11, fontWeight: '600' }}>SELL</Text>
-                      <Text style={{ color: orderSide === 'sell' ? '#fff' : '#ef4444', fontSize: 16, fontWeight: '700' }}>{fmtP(orderSymbol, orderPrice?.bid)}</Text>
+                  {/* SELL / BUY cards with spread pill between */}
+                  <View style={styles.sideRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.sideCard,
+                        { borderColor: '#ef4444', backgroundColor: orderSide === 'sell' ? '#ef4444' : 'rgba(239,68,68,0.08)' },
+                      ]}
+                      onPress={() => setOrderSide('sell')}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={{ color: orderSide === 'sell' ? '#fff' : '#ef4444', fontSize: 11, fontWeight: '700', letterSpacing: 0.6 }}>SELL</Text>
+                      <Text style={{ color: orderSide === 'sell' ? '#fff' : '#ef4444', fontSize: 18, fontWeight: '800', marginTop: 3 }}>
+                        {fmtP(orderSymbol, orderPrice?.bid)}
+                      </Text>
                     </TouchableOpacity>
-                    <Text style={{ color: colors.t3, fontSize: 11 }}>{orderPrice?.bid && orderPrice?.ask ? Math.abs(orderPrice.ask - orderPrice.bid).toFixed(2) : '0.00'}</Text>
-                    <TouchableOpacity style={[styles.sideBtn, { backgroundColor: orderSide === 'buy' ? '#22c55e' : 'rgba(34,197,94,0.12)', borderColor: '#22c55e' }]} onPress={() => setOrderSide('buy')}>
-                      <Text style={{ color: orderSide === 'buy' ? '#fff' : '#22c55e', fontSize: 11, fontWeight: '600' }}>BUY</Text>
-                      <Text style={{ color: orderSide === 'buy' ? '#fff' : '#22c55e', fontSize: 16, fontWeight: '700' }}>{fmtP(orderSymbol, orderPrice?.ask)}</Text>
+                    <View style={[styles.spreadChip, { backgroundColor: colors.bg3, borderColor: colors.border }]}>
+                      <Text style={{ color: colors.t3, fontSize: 8, fontWeight: '700', letterSpacing: 0.4 }}>SPRD</Text>
+                      <Text style={{ color: colors.t2, fontSize: 11, fontWeight: '700' }}>
+                        {orderPrice?.bid && orderPrice?.ask ? Math.abs(orderPrice.ask - orderPrice.bid).toFixed(2) : '—'}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[
+                        styles.sideCard,
+                        { borderColor: '#22c55e', backgroundColor: orderSide === 'buy' ? '#22c55e' : 'rgba(34,197,94,0.08)' },
+                      ]}
+                      onPress={() => setOrderSide('buy')}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={{ color: orderSide === 'buy' ? '#fff' : '#22c55e', fontSize: 11, fontWeight: '700', letterSpacing: 0.6 }}>BUY</Text>
+                      <Text style={{ color: orderSide === 'buy' ? '#fff' : '#22c55e', fontSize: 18, fontWeight: '800', marginTop: 3 }}>
+                        {fmtP(orderSymbol, orderPrice?.ask)}
+                      </Text>
                     </TouchableOpacity>
                   </View>
                   {orderType !== 'market' && (
@@ -865,18 +893,31 @@ const MarketScreen: React.FC = () => {
                       <TextInput style={[styles.input, { backgroundColor: colors.bg3, color: colors.t1, borderColor: colors.border }]} value={limitPrice} onChangeText={setLimitPrice} keyboardType="decimal-pad" placeholder={(orderPrice?.bid || 0).toFixed(2)} placeholderTextColor={colors.t3} />
                     </View>
                   )}
-                  {/* Lot Size */}
-                  <Text style={{ color: colors.t1, fontSize: 12, fontWeight: '600', marginBottom: 6 }}>Lot Size</Text>
-                  <View style={[styles.volumeRow, { backgroundColor: colors.bg3, borderColor: colors.border }]}>
-                    <TouchableOpacity style={styles.volumeBtn} onPress={() => setVolume(prev => Math.max(minLot, parseFloat(((parseFloat(prev) || minLot) - lotStep).toFixed(6))).toString())}>
-                      <Text style={[styles.volumeBtnTxt, { color: colors.t1 }]}>−</Text>
+                  {/* Lot Size — elevated stepper card */}
+                  <Text style={[styles.sectionLabel, { color: colors.t2 }]}>LOT SIZE</Text>
+                  <View style={[styles.stepperCard, { backgroundColor: colors.bg2, borderColor: colors.border }]}>
+                    <TouchableOpacity
+                      style={[styles.stepperBtn, { backgroundColor: colors.bg3 }]}
+                      onPress={() => setVolume(prev => Math.max(minLot, parseFloat(((parseFloat(prev) || minLot) - lotStep).toFixed(6))).toString())}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="remove" size={22} color={colors.t1} />
                     </TouchableOpacity>
-                    <TextInput style={[styles.volumeInput, { color: colors.t1 }]} value={volume} onChangeText={v => { if (v === '' || /^[0-9]*\.?[0-9]*$/.test(v)) setVolume(v); }} keyboardType="decimal-pad" />
-                    <TouchableOpacity style={styles.volumeBtn} onPress={() => setVolume(prev => parseFloat(((parseFloat(prev) || minLot) + lotStep).toFixed(6)).toString())}>
-                      <Text style={[styles.volumeBtnTxt, { color: colors.t1 }]}>+</Text>
+                    <TextInput
+                      style={[styles.stepperInput, { color: colors.t1 }]}
+                      value={volume}
+                      onChangeText={v => { if (v === '' || /^[0-9]*\.?[0-9]*$/.test(v)) setVolume(v); }}
+                      keyboardType="decimal-pad"
+                    />
+                    <TouchableOpacity
+                      style={[styles.stepperBtn, { backgroundColor: colors.bg3 }]}
+                      onPress={() => setVolume(prev => parseFloat(((parseFloat(prev) || minLot) + lotStep).toFixed(6)).toString())}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="add" size={22} color={colors.t1} />
                     </TouchableOpacity>
                   </View>
-                  <Text style={{ color: colors.t3, fontSize: 11, marginBottom: 8 }}>{(parseFloat(volume) || 0).toFixed(isOrderIndian ? 0 : 4)} lots</Text>
+                  <Text style={{ color: colors.t3, fontSize: 11, marginTop: 6, marginBottom: 12 }}>{(parseFloat(volume) || 0).toFixed(isOrderIndian ? 0 : 4)} lots</Text>
 
                   {/* Lot size info (F&O / indices when lotSize > 1) */}
                   {activeLotSize > 1 && (
@@ -890,37 +931,37 @@ const MarketScreen: React.FC = () => {
                     </View>
                   )}
 
-                  {/* Collapsible Stop Loss */}
-                  <TouchableOpacity style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10 }} onPress={() => setShowSL(!showSL)}>
-                    <Text style={[styles.inputLabel, { color: colors.t2 }]}>Stop Loss</Text>
-                    <Ionicons name={showSL ? 'chevron-up' : 'chevron-down'} size={16} color="#475569" />
+                  {/* Collapsible Stop Loss / Target — tappable row with shevron */}
+                  <TouchableOpacity style={[styles.collapsibleRow, { borderColor: colors.border }]} onPress={() => setShowSL(!showSL)} activeOpacity={0.7}>
+                    <Text style={[styles.sectionLabel, { color: colors.t2, marginBottom: 0 }]}>STOP LOSS</Text>
+                    <Ionicons name={showSL ? 'chevron-up' : 'chevron-down'} size={16} color={colors.t3} />
                   </TouchableOpacity>
-                  {showSL && <TextInput style={[styles.input, { backgroundColor: colors.bg3, color: colors.t1, borderColor: colors.border, marginBottom: 10 }]} value={stopLoss} onChangeText={setStopLoss} keyboardType="decimal-pad" placeholder="Optional" placeholderTextColor={colors.t3} />}
-                  {/* Collapsible Target Price */}
-                  <TouchableOpacity style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10 }} onPress={() => setShowTP(!showTP)}>
-                    <Text style={[styles.inputLabel, { color: colors.t2 }]}>Target Price</Text>
-                    <Ionicons name={showTP ? 'chevron-up' : 'chevron-down'} size={16} color="#475569" />
+                  {showSL && <TextInput style={[styles.input, { backgroundColor: colors.bg3, color: colors.t1, borderColor: colors.border, marginBottom: 8 }]} value={stopLoss} onChangeText={setStopLoss} keyboardType="decimal-pad" placeholder="Optional" placeholderTextColor={colors.t3} />}
+                  <TouchableOpacity style={[styles.collapsibleRow, { borderColor: colors.border }]} onPress={() => setShowTP(!showTP)} activeOpacity={0.7}>
+                    <Text style={[styles.sectionLabel, { color: colors.t2, marginBottom: 0 }]}>TARGET PRICE</Text>
+                    <Ionicons name={showTP ? 'chevron-up' : 'chevron-down'} size={16} color={colors.t3} />
                   </TouchableOpacity>
-                  {showTP && <TextInput style={[styles.input, { backgroundColor: colors.bg3, color: colors.t1, borderColor: colors.border, marginBottom: 10 }]} value={takeProfit} onChangeText={setTakeProfit} keyboardType="decimal-pad" placeholder="Optional" placeholderTextColor={colors.t3} />}
-                  {/* Margin info */}
+                  {showTP && <TextInput style={[styles.input, { backgroundColor: colors.bg3, color: colors.t1, borderColor: colors.border, marginBottom: 8 }]} value={takeProfit} onChangeText={setTakeProfit} keyboardType="decimal-pad" placeholder="Optional" placeholderTextColor={colors.t3} />}
+                  {/* Margin info card */}
                   {(() => {
                     const ep = orderSide === 'buy' ? (orderPrice?.ask || 0) : (orderPrice?.bid || 0);
                     const vol = parseFloat(volume) || 0;
                     const notional = ep * vol;
                     const intraday = notional > 0 ? `₹${notional.toFixed(2)}` : '—';
                     return (
-                      <View style={{ backgroundColor: colors.bg3, borderRadius: 10, padding: 12, marginTop: 8, marginBottom: 14 }}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                          <Text style={{ color: colors.t2, fontSize: 11 }}>Margin Mode</Text>
-                          <Text style={{ color: colors.t2, fontSize: 11, fontWeight: '600' }}>Fixed — ₹100/lot</Text>
+                      <View style={[styles.marginCard, { backgroundColor: colors.bg2, borderColor: colors.border }]}>
+                        <View style={styles.marginRow}>
+                          <Text style={{ color: colors.t3, fontSize: 11 }}>Margin Mode</Text>
+                          <Text style={{ color: colors.t2, fontSize: 12, fontWeight: '600' }}>Fixed · ₹100/lot</Text>
                         </View>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                          <Text style={{ color: colors.t2, fontSize: 11 }}>Intraday Margin</Text>
-                          <Text style={{ color: '#3b82f6', fontSize: 11, fontWeight: '600' }}>₹{(vol * 100).toFixed(2)}</Text>
+                        <View style={[styles.marginDivider, { backgroundColor: colors.border }]} />
+                        <View style={styles.marginRow}>
+                          <Text style={{ color: colors.t3, fontSize: 11 }}>Intraday Margin</Text>
+                          <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700' }}>₹{(vol * 100).toFixed(2)}</Text>
                         </View>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                          <Text style={{ color: colors.t2, fontSize: 11 }}>Carryforward Margin</Text>
-                          <Text style={{ color: '#3b82f6', fontSize: 11, fontWeight: '600' }}>{intraday}</Text>
+                        <View style={styles.marginRow}>
+                          <Text style={{ color: colors.t3, fontSize: 11 }}>Carryforward Margin</Text>
+                          <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700' }}>{intraday}</Text>
                         </View>
                       </View>
                     );
@@ -1059,6 +1100,22 @@ const styles = StyleSheet.create({
   volumeBtn: { width: 50, height: 48, alignItems: 'center', justifyContent: 'center' },
   volumeBtnTxt: { fontSize: 20, fontWeight: '600' },
   volumeInput: { flex: 1, textAlign: 'center', fontSize: 18, fontWeight: '700', padding: 10 },
+
+  // Redesigned order sheet bits
+  segGroup: { flexDirection: 'row', borderRadius: 10, padding: 4, marginBottom: 14 },
+  segTab: { flex: 1, paddingVertical: 9, alignItems: 'center', borderRadius: 7 },
+  sideRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  sideCard: { flex: 1, paddingVertical: 14, alignItems: 'center', borderRadius: 14, borderWidth: 1.5 },
+  spreadChip: { marginHorizontal: 8, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, borderWidth: 1, alignItems: 'center', minWidth: 48 },
+  sectionLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 0.6, marginBottom: 8, textTransform: 'uppercase' },
+  stepperCard: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, borderWidth: 1, padding: 4 },
+  stepperBtn: { width: 48, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 9 },
+  stepperInput: { flex: 1, textAlign: 'center', fontSize: 20, fontWeight: '700', padding: 10 },
+  collapsibleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderTopWidth: 1 },
+  marginCard: { borderRadius: 12, borderWidth: 1, padding: 14, marginTop: 10, marginBottom: 16 },
+  marginRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 },
+  marginDivider: { height: 1, marginVertical: 6 },
+  sheetSymbolHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 1 },
 });
 
 export default MarketScreen;
