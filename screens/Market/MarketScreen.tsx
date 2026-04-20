@@ -417,7 +417,8 @@ const MarketScreen: React.FC = () => {
     setOrderSymbol(sym);
     setOrderSide('buy');
     setOrderType('market');
-    setVolume('0.01');
+    // Indian markets trade in whole lots; FX/commodities/crypto in 0.01 micro-lots.
+    setVolume(isIndianSymbol(sym) ? '1' : '0.01');
     setLotSize(1);
     setStopLoss('');
     setTakeProfit('');
@@ -499,6 +500,9 @@ const MarketScreen: React.FC = () => {
 
   const activeLotSize = Number(activeInstrument?.lotSize) || 1;
   const isOrderIndian = isIndianSymbol(orderSymbol);
+  // Stepper increment + floor for the lot input, per market type.
+  const lotStep = isOrderIndian ? 1 : 0.01;
+  const minLot = isOrderIndian ? 1 : 0.01;
 
   // Auto-switch away from hedging if symbol is Indian (web parity)
   useEffect(() => {
@@ -792,15 +796,15 @@ const MarketScreen: React.FC = () => {
                   {/* Volume */}
                   <Text style={{ color: colors.t1, fontSize: 12, fontWeight: '600', marginBottom: 6 }}>Volume (Lots)</Text>
                   <View style={[styles.volumeRow, { backgroundColor: colors.bg3, borderColor: colors.border }]}>
-                    <TouchableOpacity style={styles.volumeBtn} onPress={() => setVolume(prev => Math.max(0.01, parseFloat(((parseFloat(prev) || 0.01) - 0.01).toFixed(6))).toString())}>
+                    <TouchableOpacity style={styles.volumeBtn} onPress={() => setVolume(prev => Math.max(minLot, parseFloat(((parseFloat(prev) || minLot) - lotStep).toFixed(6))).toString())}>
                       <Text style={[styles.volumeBtnTxt, { color: colors.t1 }]}>−</Text>
                     </TouchableOpacity>
                     <TextInput style={[styles.volumeInput, { color: colors.t1 }]} value={volume} onChangeText={v => { if (v === '' || /^[0-9]*\.?[0-9]*$/.test(v)) setVolume(v); }} keyboardType="decimal-pad" />
-                    <TouchableOpacity style={styles.volumeBtn} onPress={() => setVolume(prev => parseFloat(((parseFloat(prev) || 0.01) + 0.01).toFixed(6)).toString())}>
+                    <TouchableOpacity style={styles.volumeBtn} onPress={() => setVolume(prev => parseFloat(((parseFloat(prev) || minLot) + lotStep).toFixed(6)).toString())}>
                       <Text style={[styles.volumeBtnTxt, { color: colors.t1 }]}>+</Text>
                     </TouchableOpacity>
                   </View>
-                  <Text style={{ color: colors.t3, fontSize: 11, marginBottom: 14 }}>{(parseFloat(volume) || 0).toFixed(4)} lots</Text>
+                  <Text style={{ color: colors.t3, fontSize: 11, marginBottom: 14 }}>{(parseFloat(volume) || 0).toFixed(isOrderIndian ? 0 : 4)} lots</Text>
                   {/* Leverage */}
                   <Text style={{ color: colors.t1, fontSize: 12, fontWeight: '600', marginBottom: 6 }}>Leverage</Text>
                   <View style={{ flexDirection: 'row', gap: 6, marginBottom: 14 }}>
@@ -827,7 +831,7 @@ const MarketScreen: React.FC = () => {
                     )}
                   </TouchableOpacity>
                   <Text style={{ color: colors.t3, fontSize: 10, textAlign: 'center', marginTop: 6 }}>
-                    {(parseFloat(volume) || 0).toFixed(2)} lots @ {fmtP(orderSymbol, orderSide === 'buy' ? orderPrice?.ask : orderPrice?.bid)}
+                    {(parseFloat(volume) || 0).toFixed(isOrderIndian ? 0 : 2)} lots @ {fmtP(orderSymbol, orderSide === 'buy' ? orderPrice?.ask : orderPrice?.bid)}
                   </Text>
                 </>
               )}
@@ -864,15 +868,15 @@ const MarketScreen: React.FC = () => {
                   {/* Lot Size */}
                   <Text style={{ color: colors.t1, fontSize: 12, fontWeight: '600', marginBottom: 6 }}>Lot Size</Text>
                   <View style={[styles.volumeRow, { backgroundColor: colors.bg3, borderColor: colors.border }]}>
-                    <TouchableOpacity style={styles.volumeBtn} onPress={() => setVolume(prev => Math.max(0.01, parseFloat(((parseFloat(prev) || 0.01) - 0.01).toFixed(6))).toString())}>
+                    <TouchableOpacity style={styles.volumeBtn} onPress={() => setVolume(prev => Math.max(minLot, parseFloat(((parseFloat(prev) || minLot) - lotStep).toFixed(6))).toString())}>
                       <Text style={[styles.volumeBtnTxt, { color: colors.t1 }]}>−</Text>
                     </TouchableOpacity>
                     <TextInput style={[styles.volumeInput, { color: colors.t1 }]} value={volume} onChangeText={v => { if (v === '' || /^[0-9]*\.?[0-9]*$/.test(v)) setVolume(v); }} keyboardType="decimal-pad" />
-                    <TouchableOpacity style={styles.volumeBtn} onPress={() => setVolume(prev => parseFloat(((parseFloat(prev) || 0.01) + 0.01).toFixed(6)).toString())}>
+                    <TouchableOpacity style={styles.volumeBtn} onPress={() => setVolume(prev => parseFloat(((parseFloat(prev) || minLot) + lotStep).toFixed(6)).toString())}>
                       <Text style={[styles.volumeBtnTxt, { color: colors.t1 }]}>+</Text>
                     </TouchableOpacity>
                   </View>
-                  <Text style={{ color: colors.t3, fontSize: 11, marginBottom: 8 }}>{(parseFloat(volume) || 0).toFixed(4)} lots</Text>
+                  <Text style={{ color: colors.t3, fontSize: 11, marginBottom: 8 }}>{(parseFloat(volume) || 0).toFixed(isOrderIndian ? 0 : 4)} lots</Text>
 
                   {/* Lot size info (F&O / indices when lotSize > 1) */}
                   {activeLotSize > 1 && (
@@ -924,11 +928,11 @@ const MarketScreen: React.FC = () => {
                   {/* Submit */}
                   <TouchableOpacity style={[styles.submitBtn, { backgroundColor: orderSide === 'buy' ? '#14b8a6' : '#ef4444', opacity: isPlacingOrder ? 0.6 : 1 }]} onPress={handlePlaceOrder} disabled={isPlacingOrder} activeOpacity={0.8}>
                     {isPlacingOrder ? <ActivityIndicator color="#fff" size="small" /> : (
-                      <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>{orderSide === 'buy' ? 'BUY' : 'SELL'} {(parseFloat(volume) || 0).toFixed(2)} lots</Text>
+                      <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>{orderSide === 'buy' ? 'BUY' : 'SELL'} {(parseFloat(volume) || 0).toFixed(isOrderIndian ? 0 : 2)} lots</Text>
                     )}
                   </TouchableOpacity>
                   <Text style={{ color: colors.t3, fontSize: 10, textAlign: 'center', marginTop: 6 }}>
-                    {(parseFloat(volume) || 0).toFixed(2)} lots @ {fmtP(orderSymbol, orderSide === 'buy' ? orderPrice?.ask : orderPrice?.bid)} (intraday)
+                    {(parseFloat(volume) || 0).toFixed(isOrderIndian ? 0 : 2)} lots @ {fmtP(orderSymbol, orderSide === 'buy' ? orderPrice?.ask : orderPrice?.bid)} (intraday)
                   </Text>
                 </>
               )}
