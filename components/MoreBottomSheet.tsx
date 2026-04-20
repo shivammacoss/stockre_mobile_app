@@ -1,10 +1,12 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Modal, Pressable,
-  Animated, PanResponder, Dimensions,
+  Animated, PanResponder, Dimensions, Linking, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
+import axios from 'axios';
+import { API_URL } from '../config';
 
 const { height: SCREEN_H } = Dimensions.get('window');
 const SHEET_HEIGHT = 300;
@@ -28,6 +30,42 @@ const MENU_ITEMS: Array<{
 const MoreBottomSheet: React.FC<MoreBottomSheetProps> = ({ visible, onClose, onSelect }) => {
   const { colors } = useTheme();
   const translateY = useRef(new Animated.Value(SHEET_HEIGHT)).current;
+  const [waNumber, setWaNumber] = useState<string>('');
+
+  // Fetch the admin-configured WhatsApp support number once when the sheet
+  // becomes visible. Admin edits it via /api/admin/settings in the panel.
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    axios
+      .get(`${API_URL}/api/site-settings`, { timeout: 5000 })
+      .then((res) => {
+        if (cancelled) return;
+        const n = res.data?.settings?.supportWhatsapp;
+        if (typeof n === 'string') setWaNumber(n.trim());
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [visible]);
+
+  const openWhatsApp = () => {
+    const cleaned = waNumber.replace(/[^\d+]/g, '').replace(/^\+/, '');
+    if (!cleaned) {
+      Alert.alert('WhatsApp support unavailable', 'The support number has not been configured yet. Please try again later.');
+      return;
+    }
+    const url = `https://wa.me/${cleaned}`;
+    Animated.timing(translateY, {
+      toValue: SHEET_HEIGHT,
+      duration: 180,
+      useNativeDriver: true,
+    }).start(() => {
+      onClose();
+      Linking.openURL(url).catch(() => {
+        Alert.alert('Unable to open WhatsApp', 'Make sure WhatsApp is installed on this device.');
+      });
+    });
+  };
 
   useEffect(() => {
     if (visible) {
@@ -114,6 +152,18 @@ const MoreBottomSheet: React.FC<MoreBottomSheetProps> = ({ visible, onClose, onS
                 <Text style={{ color: colors.t1, fontSize: 17, fontWeight: '500' }}>{item.label}</Text>
               </TouchableOpacity>
             ))}
+
+            {/* WhatsApp Support — number is admin-configurable via /api/admin/settings */}
+            <TouchableOpacity
+              style={styles.row}
+              onPress={openWhatsApp}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.iconWrap, { backgroundColor: 'rgba(37, 211, 102, 0.12)' }]}>
+                <Ionicons name="logo-whatsapp" size={22} color="#25D366" />
+              </View>
+              <Text style={{ color: colors.t1, fontSize: 17, fontWeight: '500' }}>WhatsApp Support</Text>
+            </TouchableOpacity>
           </View>
         </Animated.View>
       </Pressable>
