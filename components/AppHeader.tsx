@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Image,
+  View, Text, TouchableOpacity, StyleSheet,
   Modal, Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,8 +9,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { useSocket } from '../contexts/SocketContext';
 import { useTheme } from '../theme/ThemeContext';
 import { notificationAPI } from '../services/api';
-
-const logo = require('../assets/stocktre-logo.png');
 
 interface AppHeaderProps {
   onDeposit?: () => void;
@@ -69,9 +67,9 @@ const AppHeader: React.FC<AppHeaderProps> = ({ onDeposit, onNotifications, onPro
   return (
     <>
       <View style={[styles.header, { backgroundColor: colors.bg0, borderBottomColor: colors.border }]}>
-        {/* Left — Logo */}
+        {/* Left — Wordmark (theme-aware, visible in dark + light) */}
         <View style={styles.left}>
-          <Image source={logo} style={styles.logoImage} resizeMode="contain" />
+          <Text style={[styles.wordmark, { color: colors.t1 }]}>stocktre</Text>
         </View>
 
         {/* Right — Action buttons */}
@@ -159,7 +157,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   left: {},
-  logoImage: { width: 130, height: 36 },
+  wordmark: { fontSize: 22, fontWeight: '700', letterSpacing: 0.3 },
 
   right: { flexDirection: 'row', alignItems: 'center', gap: 8 },
 
