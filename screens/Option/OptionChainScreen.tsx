@@ -46,12 +46,17 @@ const fmtPrice = (v: any) => {
   return n ? n.toFixed(2) : '—';
 };
 
-const OptionChainScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
+const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigation, route }) => {
   const { colors } = useTheme();
   const { prices } = useSocket();
 
-  const [segment, setSegment] = useState<string>('NSE');
-  const [underlying, setUnderlying] = useState<string>('NIFTY');
+  // Allow other screens (e.g. MarketScreen's order sheet) to pre-select an
+  // underlying: navigation.navigate('OptionChain', { segment, underlying }).
+  const initialSegment: string = route?.params?.segment && UNDERLYINGS[route.params.segment as keyof typeof UNDERLYINGS] ? route.params.segment : 'NSE';
+  const initialUnderlying: string = route?.params?.underlying || UNDERLYINGS[initialSegment as keyof typeof UNDERLYINGS][0];
+
+  const [segment, setSegment] = useState<string>(initialSegment);
+  const [underlying, setUnderlying] = useState<string>(initialUnderlying);
   const [expiry, setExpiry] = useState<string>('');
   const [expiries, setExpiries] = useState<string[]>([]);
   const [strikes, setStrikes] = useState<Strike[]>([]);
@@ -312,7 +317,9 @@ const OptionChainScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         <Pressable style={styles.modalOverlay} onPress={() => setShowUnderlyingPicker(false)}>
           <Pressable style={[styles.modalCard, { backgroundColor: colors.bg1, borderColor: colors.border }]} onPress={() => {}}>
             <Text style={[styles.modalTitle, { color: colors.t1 }]}>Underlying</Text>
-            {UNDERLYINGS[segment].map((u) => (
+            {/* Current underlying always included so a deep-linked stock
+                (e.g. HDFCBANK) that isn't in the preset list stays visible. */}
+            {[...new Set([underlying, ...UNDERLYINGS[segment]])].map((u) => (
               <TouchableOpacity
                 key={u}
                 style={styles.modalRow}

@@ -730,6 +730,29 @@ const MarketScreen: React.FC = () => {
             <View {...sheetPanResponder.panHandlers} style={styles.sheetHeader}>
               <View style={[styles.handleBar, { backgroundColor: colors.t3 }]} />
               <View style={{ position: 'absolute', right: 12, top: 6, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                {/* Option Chain — shown only for Indian symbols (NSE/BSE/MCX
+                    have F&O contracts). Strips any expiry/strike suffix to
+                    get the underlying (HDFCBANK25APR800CE -> HDFCBANK). */}
+                {isOrderIndian && (
+                  <Pressable
+                    onPress={() => {
+                      closeSheet();
+                      const underlyingName = (orderSymbol.match(/^[A-Z]+/)?.[0] || orderSymbol).toUpperCase();
+                      const MCX_UNDERLYINGS = ['GOLD', 'GOLDM', 'SILVER', 'SILVERM', 'CRUDEOIL', 'NATURALGAS', 'COPPER', 'ZINC', 'ALUMINIUM', 'LEAD', 'NICKEL'];
+                      const BSE_UNDERLYINGS = ['SENSEX', 'BANKEX'];
+                      const seg = MCX_UNDERLYINGS.includes(underlyingName)
+                        ? 'MCX'
+                        : BSE_UNDERLYINGS.includes(underlyingName)
+                          ? 'BSE'
+                          : 'NSE';
+                      navigation.navigate('OptionChain', { segment: seg, underlying: underlyingName });
+                    }}
+                    style={[styles.sheetIconBtn, { backgroundColor: colors.bg3, borderColor: colors.border }]}
+                    hitSlop={8}
+                  >
+                    <Ionicons name="options-outline" size={16} color={colors.blue} />
+                  </Pressable>
+                )}
                 <Pressable
                   onPress={() => { closeSheet(); openChartForSymbol(orderSymbol); }}
                   style={[styles.sheetIconBtn, { backgroundColor: colors.bg3, borderColor: colors.border }]}
