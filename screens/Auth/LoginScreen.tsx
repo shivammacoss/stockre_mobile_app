@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ActivityIndicator, KeyboardAvoidingView, Platform, Alert, ScrollView, Image,
+  ActivityIndicator, KeyboardAvoidingView, Platform, Alert, ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,8 +9,6 @@ import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../theme/ThemeContext';
 import { API_URL } from '../../config';
-
-const logo = require('../../assets/stocktre-logo.png');
 
 const LoginScreen: React.FC = () => {
   const navigation = useNavigation<any>();
@@ -60,7 +58,7 @@ const LoginScreen: React.FC = () => {
         >
           {/* Hero */}
           <View style={styles.hero}>
-            <Image source={logo} style={styles.logo} resizeMode="contain" />
+            <Text style={[styles.wordmark, { color: colors.t1 }]}>stocktre</Text>
             <Text style={[styles.heroTitle, { color: colors.t1 }]}>Welcome back</Text>
             <Text style={[styles.heroSub, { color: colors.t3 }]}>Sign in to continue trading</Text>
           </View>
@@ -160,7 +158,7 @@ const LoginScreen: React.FC = () => {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   hero: { alignItems: 'center', paddingTop: 20, paddingBottom: 28 },
-  logo: { width: 180, height: 48, marginBottom: 18 },
+  wordmark: { fontSize: 34, fontWeight: '800', letterSpacing: 0.5, marginBottom: 18 },
   heroTitle: { fontSize: 22, fontWeight: '800', letterSpacing: 0.3 },
   heroSub: { fontSize: 13, marginTop: 4 },
 

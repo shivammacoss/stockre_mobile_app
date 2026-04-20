@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ActivityIndicator, KeyboardAvoidingView, Platform, Alert, ScrollView, Image,
+  ActivityIndicator, KeyboardAvoidingView, Platform, Alert, ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,8 +11,6 @@ import { authAPI } from '../../services/api';
 import * as SecureStore from 'expo-secure-store';
 
 interface Props { navigation: any }
-
-const logo = require('../../assets/stocktre-logo.png');
 
 const RegisterScreen: React.FC<Props> = ({ navigation }) => {
   const { colors } = useTheme();
@@ -106,7 +104,7 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="arrow-back" size={24} color={colors.t1} />
         </TouchableOpacity>
-        <Image source={logo} style={styles.logo} resizeMode="contain" />
+        <Text style={[styles.wordmark, { color: colors.t1 }]}>stocktre</Text>
         <View style={{ width: 24 }} />
       </View>
 
@@ -302,7 +300,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1,
   },
-  logo: { width: 130, height: 36 },
+  wordmark: { fontSize: 28, fontWeight: '800', letterSpacing: 0.5 },
 
   title: { fontSize: 24, fontWeight: '800', letterSpacing: 0.3 },
   subtitle: { fontSize: 13, marginTop: 4, marginBottom: 24 },
