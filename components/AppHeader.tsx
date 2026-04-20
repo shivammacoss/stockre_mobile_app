@@ -74,13 +74,13 @@ const AppHeader: React.FC<AppHeaderProps> = ({ onDeposit, onNotifications, onPro
 
         {/* Right — Action buttons */}
         <View style={styles.right}>
-          {/* + Deposit */}
+          {/* Wallet */}
           <TouchableOpacity
             style={[styles.depositBtn, { backgroundColor: colors.blue }]}
             onPress={handleDeposit}
             activeOpacity={0.8}
           >
-            <Text style={styles.depositBtnText}>+</Text>
+            <Ionicons name="wallet-outline" size={18} color="#fff" />
           </TouchableOpacity>
 
           {/* Notification Bell */}
