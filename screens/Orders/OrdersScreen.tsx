@@ -119,13 +119,15 @@ const OrdersScreen: React.FC = () => {
       : `${sign}$${abs.toFixed(2)}`;
   }, [displayCurrency, effectiveRate]);
 
-  const formatTotalPnl = useCallback((totalUsd: number) => {
-    const sign = totalUsd >= 0 ? '+' : '-';
-    const abs = Math.abs(totalUsd);
-    return displayCurrency === 'INR'
-      ? `${sign}₹${(abs * effectiveRate).toFixed(2)}`
-      : `${sign}$${abs.toFixed(2)}`;
-  }, [displayCurrency, effectiveRate]);
+  // Input is already pre-converted to the display currency by callers.
+  // Previously this multiplied by effectiveRate, which double-counted the FX
+  // for Indian positions (whose raw P/L is already in INR) — reported as
+  // ~93x the real value on mixed / Indian-only accounts.
+  const formatTotalPnl = useCallback((pnl: number) => {
+    const sign = pnl >= 0 ? '+' : '-';
+    const abs = Math.abs(pnl);
+    return displayCurrency === 'INR' ? `${sign}₹${abs.toFixed(2)}` : `${sign}$${abs.toFixed(2)}`;
+  }, [displayCurrency]);
 
   useEffect(() => { loadData(); }, [user?.id]);
 
@@ -345,11 +347,19 @@ const OrdersScreen: React.FC = () => {
     return diff * cs * vol;
   };
 
-  const totalPnl = positions.reduce((s, p) => s + calcLivePnl(p), 0);
+  // calcLivePnl returns each position's P/L in its native currency — INR for
+  // Indian symbols, USD for international. Aggregate into INR first (the
+  // wallet + ledger base), then convert to display currency for the UI.
+  const totalPnlInr = positions.reduce((s, p) => {
+    const raw = calcLivePnl(p);
+    return s + (isIndianPos(p) ? raw : raw * effectiveRate);
+  }, 0);
+  const totalPnl = displayCurrency === 'INR' ? totalPnlInr : totalPnlInr / effectiveRate;
   const marginUsed = positions.reduce((s, p) => s + Number(p.marginUsed || p.margin || 0), 0);
   const ledgerBalance = Number(walletINR?.balance || 0);
   // Available = deposited funds minus margin locked in open trades, plus live M2M.
-  const marginAvailable = ledgerBalance - marginUsed + totalPnl;
+  // All three are in INR here.
+  const marginAvailable = ledgerBalance - marginUsed + totalPnlInr;
 
   const remarkColor = (r: string) => {
     if (!r) return colors.t3;
@@ -513,7 +523,7 @@ const OrdersScreen: React.FC = () => {
             <View style={styles.summaryCell}>
               <Text style={[styles.summaryLabel, { color: colors.t3 }]}>M2M</Text>
               <Text style={[styles.summaryValue, { color: totalPnl >= 0 ? colors.green : colors.red }]}>
-                {totalPnl >= 0 ? '+' : ''}{formatTotalPnl(totalPnl)}
+                {formatTotalPnl(totalPnl)}
               </Text>
             </View>
           </View>
