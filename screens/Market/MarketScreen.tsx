@@ -11,7 +11,7 @@ import { useSocket } from '../../contexts/SocketContext';
 import { useTheme } from '../../theme/ThemeContext';
 import { tradingAPI, instrumentsAPI, userAPI, walletAPI } from '../../services/api';
 import AppHeader from '../../components/AppHeader';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 
 const SW = Dimensions.get('window').width;
 const SH = Dimensions.get('window').height;
@@ -96,6 +96,7 @@ const MarketScreen: React.FC = () => {
   const { prices, isConnected } = useSocket();
   const { colors } = useTheme();
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const [activeCat, setActiveCat] = useState('FAVOURITES');
   const [search, setSearch] = useState('');
   const [instrumentsByCategory, setInstrumentsByCategory] = useState<Record<string, any[]>>(DEFAULT_INSTRUMENTS);
@@ -434,6 +435,16 @@ const MarketScreen: React.FC = () => {
   const openChartForSymbol = (sym: string) => {
     navigation.navigate('Chart', { symbol: sym });
   };
+
+  // Deep-link hook — when another screen (e.g. OptionChain) navigates here
+  // with { openOrderFor: 'SYMBOL' }, open the order sheet on mount. Reset
+  // the param after consuming so pull-to-refresh / re-focus don't re-fire.
+  useEffect(() => {
+    const sym = route.params?.openOrderFor;
+    if (!sym) return;
+    openOrderSheet(String(sym));
+    navigation.setParams?.({ openOrderFor: undefined });
+  }, [route.params?.openOrderFor]);
 
   const handlePlaceOrder = async () => {
     if (!user?.id && !user?.oderId) return;

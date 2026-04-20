@@ -212,6 +212,11 @@ export const instrumentsAPI = {
   // Unsubscribe a Zerodha instrument by token
   unsubscribeZerodhaInstrument: (token: number | string) =>
     api.delete(`/api/zerodha/instruments/subscribe/${token}`),
+
+  // Option chain — NSE | BSE | MCX | CRYPTO (server normalizes case).
+  // Returns { expiries, expiry, strikes: [{ strike, ce, pe }] }.
+  getOptionsChain: (params: { segment: string; underlying: string; expiry?: string }) =>
+    api.get('/api/options-chain', { params }),
 };
 
 // ═══ User ═══

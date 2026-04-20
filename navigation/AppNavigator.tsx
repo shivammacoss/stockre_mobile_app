@@ -21,6 +21,7 @@ import OrdersScreen from '../screens/Orders/OrdersScreen';
 import SettingsScreen from '../screens/Settings/SettingsScreen';
 import BusinessScreen from '../screens/More/BusinessScreen';
 import ReportsScreen from '../screens/More/ReportsScreen';
+import OptionChainScreen from '../screens/Option/OptionChainScreen';
 import WalletScreen from '../screens/Wallet/WalletScreen';
 import NotificationsScreen from '../screens/Notifications/NotificationsScreen';
 
@@ -172,6 +173,11 @@ const RootNavigator: React.FC<{ onMorePress: () => void }> = ({ onMorePress }) =
         options={{ animation: 'slide_from_right' }}
       />
       <RootStack.Screen
+        name="OptionChain"
+        component={OptionChainScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <RootStack.Screen
         name="Notifications"
         component={NotificationsScreen}
         options={{ animation: 'slide_from_right' }}
@@ -197,7 +203,7 @@ const AppNavigator: React.FC = () => {
     );
   }
 
-  const handleSheetSelect = (screen: 'Profile' | 'Business' | 'Wallet' | 'Reports') => {
+  const handleSheetSelect = (screen: 'Profile' | 'Business' | 'Wallet' | 'Reports' | 'OptionChain') => {
     navRef.navigate(screen as never);
   };
 

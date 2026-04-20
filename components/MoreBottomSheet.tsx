@@ -11,7 +11,7 @@ import { API_URL } from '../config';
 const { height: SCREEN_H } = Dimensions.get('window');
 const SHEET_HEIGHT = 300;
 
-type MenuKey = 'Profile' | 'Business' | 'Wallet' | 'Reports';
+type MenuKey = 'Profile' | 'Business' | 'Wallet' | 'OptionChain' | 'Reports';
 
 interface MoreBottomSheetProps {
   visible: boolean;
@@ -27,6 +27,7 @@ const MENU_ITEMS: Array<{
   { key: 'Profile', icon: 'person-outline', label: 'Profile' },
   { key: 'Business', icon: 'briefcase-outline', label: 'Business' },
   { key: 'Wallet', icon: 'wallet-outline', label: 'Wallet' },
+  { key: 'OptionChain', icon: 'options-outline', label: 'Option Chain' },
   { key: 'Reports', icon: 'document-text-outline', label: 'Reports' },
 ];
 
