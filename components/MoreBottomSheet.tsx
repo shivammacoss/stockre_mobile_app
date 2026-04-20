@@ -11,20 +11,23 @@ import { API_URL } from '../config';
 const { height: SCREEN_H } = Dimensions.get('window');
 const SHEET_HEIGHT = 300;
 
+type MenuKey = 'Profile' | 'Business' | 'Wallet' | 'Reports';
+
 interface MoreBottomSheetProps {
   visible: boolean;
   onClose: () => void;
-  onSelect: (screen: 'Profile' | 'Business' | 'Wallet') => void;
+  onSelect: (screen: MenuKey) => void;
 }
 
 const MENU_ITEMS: Array<{
-  key: 'Profile' | 'Business' | 'Wallet';
+  key: MenuKey;
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
 }> = [
   { key: 'Profile', icon: 'person-outline', label: 'Profile' },
   { key: 'Business', icon: 'briefcase-outline', label: 'Business' },
   { key: 'Wallet', icon: 'wallet-outline', label: 'Wallet' },
+  { key: 'Reports', icon: 'document-text-outline', label: 'Reports' },
 ];
 
 const MoreBottomSheet: React.FC<MoreBottomSheetProps> = ({ visible, onClose, onSelect }) => {
@@ -109,7 +112,7 @@ const MoreBottomSheet: React.FC<MoreBottomSheetProps> = ({ visible, onClose, onS
     })
   ).current;
 
-  const handleSelect = (key: 'Profile' | 'Business' | 'Wallet') => {
+  const handleSelect = (key: MenuKey) => {
     Animated.timing(translateY, {
       toValue: SHEET_HEIGHT,
       duration: 180,
