@@ -837,18 +837,18 @@ const MarketScreen: React.FC = () => {
                     </TouchableOpacity>
                   </View>
                   {/* Option Trade shortcut — opens the Option Chain for this
-                      instrument's underlying. Indian symbols only (NSE/BSE/
-                      MCX have F&O; forex/crypto-perp don't). */}
-                  {isOrderIndian && (
-                    <TouchableOpacity
-                      style={[styles.optionTradeBtn, { borderColor: colors.blue, backgroundColor: colors.blueDim }]}
-                      onPress={() => openOptionChainForSymbol(orderSymbol)}
-                      activeOpacity={0.85}
-                    >
-                      <Ionicons name="options-outline" size={16} color={colors.blue} />
-                      <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700', letterSpacing: 0.4 }}>OPTION TRADE</Text>
-                    </TouchableOpacity>
-                  )}
+                      instrument's underlying. Always visible so the entry
+                      point is consistent across the app; the Option Chain
+                      screen shows an empty state for symbols that don't
+                      have F&O contracts (forex / crypto-perp). */}
+                  <TouchableOpacity
+                    style={[styles.optionTradeBtn, { borderColor: colors.blue, backgroundColor: colors.blueDim }]}
+                    onPress={() => openOptionChainForSymbol(orderSymbol)}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="options-outline" size={16} color={colors.blue} />
+                    <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700', letterSpacing: 0.4 }}>OPTION TRADE</Text>
+                  </TouchableOpacity>
                   {orderType !== 'market' && (
                     <View style={styles.inputGroup}>
                       <Text style={[styles.inputLabel, { color: colors.t2 }]}>{orderType === 'limit' ? 'Limit Price' : 'Stop Price'}</Text>
