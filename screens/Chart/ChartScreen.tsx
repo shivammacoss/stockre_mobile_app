@@ -51,7 +51,8 @@ html.light,body.light{background:#ffffff}
 #loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-family:system-ui;font-size:13px;background:#000}
 body.light #loading{background:#ffffff;color:#4a587a}
 </style>
-<script src="${libUrl}/charting_library/charting_library.standalone.js"></script>
+<script src="${libUrl}/charting_library/charting_library.standalone.js"
+  onerror="try{window.ReactNativeWebView.postMessage(JSON.stringify({type:'chartLibFailed'}));}catch(e){}"></script>
 </head>
 <body>
 <div id="loading">Loading chart…</div>
@@ -328,6 +329,9 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
   const [chartTabs, setChartTabs] = useState<string[]>(['BTCUSD']);
   const [activeTab, setActiveTab] = useState('BTCUSD');
   const [chartReady, setChartReady] = useState(false);
+  // Surfaces "Chart couldn't load" in the overlay when the widget doesn't
+  // confirm ready within a reasonable window OR the WebView itself errors.
+  const [chartError, setChartError] = useState<string>('');
 
   // Order panel state
   const [orderSheetOpen, setOrderSheetOpen] = useState(false);
@@ -489,9 +493,26 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
         );
       } else if (data.type === 'chartReady') {
         setChartReady(true);
+        setChartError('');
+      } else if (data.type === 'chartLibFailed') {
+        setChartError('Chart library failed to load. Check network or CHART_LIB_URL.');
       }
     } catch (_) {}
   };
+
+  // Fallback timeout — if the chart hasn't reported ready within 20s, the
+  // TradingView script probably didn't load (stocktre.com unreachable,
+  // blocked, or the WebView silently choked). Show a real error instead
+  // of leaving the user on an infinite spinner.
+  useEffect(() => {
+    if (chartReady) return;
+    const t = setTimeout(() => {
+      if (!chartReady) {
+        setChartError('Chart didn\'t respond within 20 seconds — library may be unreachable.');
+      }
+    }, 20000);
+    return () => clearTimeout(t);
+  }, [chartReady, activeTab]);
 
   // React to theme changes after the chart is ready
   useEffect(() => {
@@ -635,14 +656,34 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
           mixedContentMode="never"
           allowsInlineMediaPlayback
           onMessage={onWebViewMessage}
-          startInLoadingState
-          renderLoading={() => (
-            <View style={[styles.loadingOverlay, { backgroundColor: isDark ? '#000' : '#fff' }]}>
-              <ActivityIndicator size="large" color={colors.blue} />
-              <Text style={{ color: colors.t3, marginTop: 8, fontSize: 12 }}>Loading chart...</Text>
-            </View>
-          )}
+          onError={(e: any) => setChartError(`WebView error: ${e?.nativeEvent?.description || 'unknown'}`)}
+          onHttpError={(e: any) => setChartError(`HTTP ${e?.nativeEvent?.statusCode || ''} loading chart library`)}
         />
+        {/* Our own overlay — stays up until the chart widget signals
+            onChartReady OR the init timeout fires. The WebView's built-in
+            startInLoadingState hid silently for "indefinite loading" cases
+            (e.g. the TradingView library URL hangs) and the user was left
+            staring at a black screen with no explanation. */}
+        {!chartReady && (
+          <View pointerEvents="none" style={[styles.loadingOverlay, { backgroundColor: isDark ? '#000' : '#fff' }]}>
+            {chartError ? (
+              <>
+                <Ionicons name="alert-circle-outline" size={40} color={colors.red} />
+                <Text style={{ color: colors.t1, marginTop: 10, fontSize: 14, fontWeight: '600', textAlign: 'center', paddingHorizontal: 20 }}>
+                  Chart couldn't load
+                </Text>
+                <Text style={{ color: colors.t3, marginTop: 4, fontSize: 11, textAlign: 'center', paddingHorizontal: 24 }}>
+                  {chartError}
+                </Text>
+              </>
+            ) : (
+              <>
+                <ActivityIndicator size="large" color={colors.blue} />
+                <Text style={{ color: colors.t3, marginTop: 8, fontSize: 12 }}>Loading chart…</Text>
+              </>
+            )}
+          </View>
+        )}
       </View>
 
       {/* ── BOTTOM TRADE BAR (matches Image 2: SELL | LOTS | BUY) ── */}
