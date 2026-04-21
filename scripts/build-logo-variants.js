@@ -27,6 +27,52 @@ const isGreen = (r, g, b) => g > 120 && r < 120 && b < 150 && g - r > 40;
 const isBlack = (r, g, b) => r < 50 && g < 50 && b < 50;
 const isWhite = (r, g, b) => r > 210 && g > 210 && b > 210;
 
+// Convert trimmed RGBA pixels into a transparent-bg variant with a given
+// foreground color for the white "stock" letters. Brand green stays as-is
+// in both variants. Near-black pixels become fully transparent so the logo
+// sits cleanly on any surface color (dark header, light header, splash).
+function renderVariant(raw, info, fgColor) {
+  const out = Buffer.from(raw);
+  const count = info.width * info.height;
+  for (let i = 0; i < count; i++) {
+    const o = i * 4;
+    const r = out[o], g = out[o + 1], b = out[o + 2];
+
+    if (isGreen(r, g, b)) {
+      // Keep brand green opaque.
+      out[o + 3] = 255;
+      continue;
+    }
+
+    if (isBlack(r, g, b)) {
+      // Background -> fully transparent.
+      out[o + 3] = 0;
+      continue;
+    }
+
+    if (isWhite(r, g, b)) {
+      out[o] = fgColor.r; out[o + 1] = fgColor.g; out[o + 2] = fgColor.b;
+      out[o + 3] = 255;
+      continue;
+    }
+
+    // Anti-aliased edges — preserve the glyph silhouette but recolor.
+    // Luminance picks whether this pixel is "more text" or "more bg"; we
+    // use it to interpolate both color and alpha toward the target.
+    const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+    if (lum < 128) {
+      // Mostly-background edge -> mostly transparent.
+      out[o + 3] = Math.round((lum / 128) * 255);
+      out[o] = fgColor.r; out[o + 1] = fgColor.g; out[o + 2] = fgColor.b;
+    } else {
+      // Mostly-text edge -> opaque, color toward foreground.
+      out[o] = fgColor.r; out[o + 1] = fgColor.g; out[o + 2] = fgColor.b;
+      out[o + 3] = 255;
+    }
+  }
+  return out;
+}
+
 async function main() {
   // 1. Trim outer black padding so both variants have tight crops.
   const trimmed = await sharp(SRC)
@@ -35,48 +81,22 @@ async function main() {
   const meta = await sharp(trimmed).metadata();
   console.log('trimmed:', meta.width, 'x', meta.height);
 
-  // 2. Dark variant = trimmed JPEG re-saved as PNG.
-  await sharp(trimmed).png().toFile(OUT_DARK);
-  console.log('wrote', OUT_DARK);
-
-  // 3. Light variant — raw RGBA → transform → PNG.
+  // 2. Raw RGBA buffer — shared between both variants.
   const { data, info } = await sharp(trimmed)
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
 
-  const out = Buffer.from(data);
-  const count = info.width * info.height;
-  const DARK_TEXT_R = 13, DARK_TEXT_G = 21, DARK_TEXT_B = 38;
+  // 3. Dark variant — transparent bg + white "stock" text + green kept.
+  const dark = renderVariant(data, info, { r: 255, g: 255, b: 255 });
+  await sharp(dark, { raw: { width: info.width, height: info.height, channels: 4 } })
+    .png()
+    .toFile(OUT_DARK);
+  console.log('wrote', OUT_DARK);
 
-  for (let i = 0; i < count; i++) {
-    const o = i * 4;
-    const r = out[o], g = out[o + 1], b = out[o + 2];
-    if (isGreen(r, g, b)) {
-      // keep brand green
-      continue;
-    } else if (isBlack(r, g, b)) {
-      out[o] = 255; out[o + 1] = 255; out[o + 2] = 255;
-    } else if (isWhite(r, g, b)) {
-      out[o] = DARK_TEXT_R; out[o + 1] = DARK_TEXT_G; out[o + 2] = DARK_TEXT_B;
-    } else {
-      // grey / antialiased edge — invert by luminance
-      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-      if (lum < 128) {
-        // was closer to black edge -> push toward white
-        out[o] = Math.min(255, r + (255 - lum));
-        out[o + 1] = Math.min(255, g + (255 - lum));
-        out[o + 2] = Math.min(255, b + (255 - lum));
-      } else {
-        // was closer to white edge -> push toward dark
-        out[o] = Math.max(0, r - lum + DARK_TEXT_R);
-        out[o + 1] = Math.max(0, g - lum + DARK_TEXT_G);
-        out[o + 2] = Math.max(0, b - lum + DARK_TEXT_B);
-      }
-    }
-  }
-
-  await sharp(out, { raw: { width: info.width, height: info.height, channels: 4 } })
+  // 4. Light variant — transparent bg + navy "stock" text + green kept.
+  const light = renderVariant(data, info, { r: 13, g: 21, b: 38 });
+  await sharp(light, { raw: { width: info.width, height: info.height, channels: 4 } })
     .png()
     .toFile(OUT_LIGHT);
   console.log('wrote', OUT_LIGHT);
