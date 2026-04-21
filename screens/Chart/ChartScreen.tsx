@@ -20,7 +20,12 @@ const SH = Dimensions.get('window').height;
 // Data source detection for historical candle API routing
 function getDataSource(symbol: string): string {
   const s = (symbol || '').toUpperCase();
-  // Indian instruments
+  // Indian F&O tradingsymbol pattern: e.g. HDFCLIFE26APR525CE,
+  // NIFTY25APR23000PE, GOLDM26MAYFUT. Must come before the generic
+  // keyword check so deep-linked options from OptionChain route to
+  // Zerodha (they aren't on MetaAPI / Delta).
+  if (/^[A-Z&]+\d{2}[A-Z]{3}\d*(CE|PE|FUT)$/.test(s)) return 'zerodha';
+  // Indian instruments (index / watchlist shortcuts)
   if (s.includes('NIFTY') || s.includes('BANKNIFTY') || s.includes('SENSEX') || s.endsWith('.NS') || s.endsWith('.BO') || s.includes('SBIN')) return 'zerodha';
   // Crypto
   if (s.includes('BTC') || s.includes('ETH') || s.includes('LTC') || s.includes('XRP') || s.includes('ADA') || s.includes('SOL') || s.includes('DOGE') || s.includes('DOT') || s.includes('AVAX') || s.includes('LINK') || s.includes('MATIC')) return 'delta';
