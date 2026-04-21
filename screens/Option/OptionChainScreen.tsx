@@ -28,6 +28,7 @@ type Leg = {
   ask: number;
   oi: number;
   volume: number;
+  close?: number;
 } | null;
 
 type Strike = { strike: number; ce: Leg; pe: Leg };
@@ -215,21 +216,33 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     const peLive = peSym ? prices[peSym] : null;
     const ceLtp = Number(ceLive?.lastPrice ?? ceLive?.bid ?? item.ce?.ltp ?? 0);
     const peLtp = Number(peLive?.lastPrice ?? peLive?.bid ?? item.pe?.ltp ?? 0);
-    const ceOi = Number(ceLive?.oi ?? item.ce?.oi ?? 0);
-    const peOi = Number(peLive?.oi ?? item.pe?.oi ?? 0);
-    // Zerodha ticks carry `change` as a percent. If absent, show '—'.
-    const ceChg = Number(ceLive?.change ?? 0);
-    const peChg = Number(peLive?.change ?? 0);
+    const ceClose = Number(item.ce?.close ?? 0);
+    const peClose = Number(item.pe?.close ?? 0);
+    // Compute Δ% the same way as the web: (ltp - close) / close * 100.
+    // Falls back to the tick's `change` field when close is absent.
+    const cePct = (() => {
+      if (ceLtp > 0 && ceClose > 0) return ((ceLtp - ceClose) / ceClose) * 100;
+      if (ceLive?.change !== undefined) return Number(ceLive.change);
+      return null;
+    })();
+    const pePct = (() => {
+      if (peLtp > 0 && peClose > 0) return ((peLtp - peClose) / peClose) * 100;
+      if (peLive?.change !== undefined) return Number(peLive.change);
+      return null;
+    })();
 
     const ceActive = activeLeg?.strike === item.strike && activeLeg.side === 'ce';
     const peActive = activeLeg?.strike === item.strike && activeLeg.side === 'pe';
 
     return (
       <View style={[styles.row, isAtm && { backgroundColor: colors.blueDim }]}>
-        {/* CE side */}
+        {/* CE CLOSE */}
+        <Text style={[styles.closeCell, { color: colors.t3 }]}>{fmtPrice(ceClose)}</Text>
+
+        {/* CE LTP (+Δ% below) — tap-to-reveal SELL/chart/BUY pills */}
         <Pressable
           onPress={() => toggleActiveLeg(item.strike, 'ce', ceSym)}
-          style={({ pressed }) => [styles.leg, { opacity: pressed ? 0.6 : 1 }]}
+          style={({ pressed }) => [styles.legCell, { opacity: pressed ? 0.6 : 1 }]}
           disabled={!ceSym}
         >
           {ceActive ? (
@@ -259,11 +272,10 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
               </Pressable>
             </View>
           ) : (
-            <View style={styles.legRow}>
-              <Text style={[styles.oiCell, { color: colors.t3 }]}>{fmtOI(ceOi)}</Text>
-              <Text style={[styles.ltpCell, { color: colors.green }]}>{fmtPrice(ceLtp)}</Text>
-              <Text style={[styles.chgCell, { color: ceChg >= 0 ? colors.green : colors.red }]}>
-                {ceLive && ceChg ? `${ceChg > 0 ? '+' : ''}${ceChg.toFixed(1)}%` : '—'}
+            <View style={{ alignItems: 'center' }}>
+              <Text style={[styles.ltpCell, { color: colors.t1 }]}>{fmtPrice(ceLtp)}</Text>
+              <Text style={[styles.pctCell, { color: cePct === null ? colors.t3 : cePct >= 0 ? colors.green : colors.red }]}>
+                {cePct === null ? '—' : `${cePct >= 0 ? '+' : ''}${cePct.toFixed(2)}%`}
               </Text>
             </View>
           )}
@@ -276,10 +288,10 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           </Text>
         </View>
 
-        {/* PE side */}
+        {/* PE LTP (+Δ% below) */}
         <Pressable
           onPress={() => toggleActiveLeg(item.strike, 'pe', peSym)}
-          style={({ pressed }) => [styles.leg, { opacity: pressed ? 0.6 : 1 }]}
+          style={({ pressed }) => [styles.legCell, { opacity: pressed ? 0.6 : 1 }]}
           disabled={!peSym}
         >
           {peActive ? (
@@ -309,15 +321,17 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
               </Pressable>
             </View>
           ) : (
-            <View style={styles.legRow}>
-              <Text style={[styles.chgCell, { color: peChg >= 0 ? colors.green : colors.red }]}>
-                {peLive && peChg ? `${peChg > 0 ? '+' : ''}${peChg.toFixed(1)}%` : '—'}
+            <View style={{ alignItems: 'center' }}>
+              <Text style={[styles.ltpCell, { color: colors.t1 }]}>{fmtPrice(peLtp)}</Text>
+              <Text style={[styles.pctCell, { color: pePct === null ? colors.t3 : pePct >= 0 ? colors.green : colors.red }]}>
+                {pePct === null ? '—' : `${pePct >= 0 ? '+' : ''}${pePct.toFixed(2)}%`}
               </Text>
-              <Text style={[styles.ltpCell, { color: colors.red }]}>{fmtPrice(peLtp)}</Text>
-              <Text style={[styles.oiCell, { color: colors.t3 }]}>{fmtOI(peOi)}</Text>
             </View>
           )}
         </Pressable>
+
+        {/* PE CLOSE */}
+        <Text style={[styles.closeCell, { color: colors.t3 }]}>{fmtPrice(peClose)}</Text>
       </View>
     );
   };
@@ -376,21 +390,21 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         </TouchableOpacity>
       </View>
 
-      {/* Column headers */}
+      {/* Calls / Puts section labels (match web layout) */}
+      <View style={[styles.sectionLabelRow, { borderBottomColor: colors.border }]}>
+        <Text style={[styles.sectionLabel, { color: colors.green }]}>Calls</Text>
+        <Text style={[styles.sectionLabel, { color: colors.red }]}>Puts</Text>
+      </View>
+
+      {/* Column headers — CLOSE · LTP · STRIKE · LTP · CLOSE (web parity) */}
       <View style={[styles.colHeader, { borderBottomColor: colors.border }]}>
-        <View style={styles.legHdr}>
-          <Text style={[styles.hdrCell, styles.oiCell, { color: colors.t3 }]}>OI</Text>
-          <Text style={[styles.hdrCell, styles.ltpCell, { color: colors.green }]}>CALL</Text>
-          <Text style={[styles.hdrCell, styles.chgCell, { color: colors.t3 }]}>Δ%</Text>
-        </View>
+        <Text style={[styles.hdrCell, styles.closeCell, { color: colors.t3 }]}>CLOSE</Text>
+        <Text style={[styles.hdrCell, styles.legCell, { color: colors.t3 }]}>LTP</Text>
         <View style={[styles.strikeCell, { borderColor: 'transparent' }]}>
-          <Text style={[styles.hdrCell, { color: colors.t3 }]}>STRIKE</Text>
+          <Text style={[styles.hdrCell, { color: colors.blue }]}>STRIKE</Text>
         </View>
-        <View style={styles.legHdr}>
-          <Text style={[styles.hdrCell, styles.chgCell, { color: colors.t3 }]}>Δ%</Text>
-          <Text style={[styles.hdrCell, styles.ltpCell, { color: colors.red }]}>PUT</Text>
-          <Text style={[styles.hdrCell, styles.oiCell, { color: colors.t3 }]}>OI</Text>
-        </View>
+        <Text style={[styles.hdrCell, styles.legCell, { color: colors.t3 }]}>LTP</Text>
+        <Text style={[styles.hdrCell, styles.closeCell, { color: colors.t3 }]}>CLOSE</Text>
       </View>
 
       {loading ? (
@@ -477,16 +491,20 @@ const styles = StyleSheet.create({
   selectorLabel: { fontSize: 9, fontWeight: '700', letterSpacing: 0.5, marginBottom: 2 },
   selectorValueRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
 
-  colHeader: { flexDirection: 'row', paddingHorizontal: 8, paddingVertical: 6, borderBottomWidth: 1 },
-  legHdr: { flex: 1, flexDirection: 'row', alignItems: 'center' },
-  hdrCell: { fontSize: 9, fontWeight: '700', letterSpacing: 0.5, textAlign: 'center' },
+  sectionLabelRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1 },
+  sectionLabel: { fontSize: 13, fontWeight: '700', letterSpacing: 0.4 },
 
-  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 8, minHeight: 46 },
-  leg: { flex: 1 },
-  legRow: { flexDirection: 'row', alignItems: 'center' },
-  oiCell: { flex: 1, textAlign: 'center', fontSize: 11 },
-  ltpCell: { flex: 1, textAlign: 'center', fontSize: 13, fontWeight: '700' },
-  chgCell: { flex: 1, textAlign: 'center', fontSize: 10 },
+  colHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 6, borderBottomWidth: 1 },
+  hdrCell: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5, textAlign: 'center' },
+
+  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 10, minHeight: 54 },
+  // CLOSE columns on both ends — fixed narrow width, muted text.
+  closeCell: { width: 56, textAlign: 'center', fontSize: 12, fontWeight: '500' },
+  // LTP + Δ% stack on each side of the strike. flex so they split the
+  // remaining row width evenly while CLOSE + STRIKE keep fixed widths.
+  legCell: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  ltpCell: { fontSize: 14, fontWeight: '700' },
+  pctCell: { fontSize: 11, fontWeight: '600', marginTop: 2 },
 
   strikeCell: { width: 72, alignItems: 'center', justifyContent: 'center', borderLeftWidth: 1, borderRightWidth: 1 },
 
