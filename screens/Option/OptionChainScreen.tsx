@@ -153,13 +153,24 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     );
   };
 
-  const openOrderSheet = (sym?: string, side?: 'buy' | 'sell') => {
+  const openOrderSheet = (
+    sym?: string,
+    side?: 'buy' | 'sell',
+    leg?: { bid?: number; ask?: number; ltp?: number } | null
+  ) => {
     if (!sym) return;
-    // MarketScreen reads route.params.openOrderFor and opens its existing
-    // order sheet on mount with the symbol + side pre-selected.
+    // Pass the chain's REST-quote prices along so MarketScreen's order
+    // sheet has a real bid/ask to show — option symbols aren't on the
+    // mobile WS feed so prices[symbol] from useSocket is empty.
     navigation.navigate('MainTabs', {
       screen: 'Market',
-      params: { openOrderFor: sym, preferredSide: side },
+      params: {
+        openOrderFor: sym,
+        preferredSide: side,
+        seedBid: leg?.bid ?? undefined,
+        seedAsk: leg?.ask ?? undefined,
+        seedLtp: leg?.ltp ?? undefined,
+      },
     });
   };
 
@@ -196,13 +207,13 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         >
           {ceActive ? (
             <View style={styles.pillRow}>
-              <Pressable onPress={() => { openOrderSheet(ceSym, 'sell'); setActiveLeg(null); }} style={[styles.pill, { backgroundColor: colors.red }]} hitSlop={6}>
+              <Pressable onPress={() => { openOrderSheet(ceSym, 'sell', item.ce); setActiveLeg(null); }} style={[styles.pill, { backgroundColor: colors.red }]} hitSlop={6}>
                 <Text style={styles.pillTxt}>SELL</Text>
               </Pressable>
               <Pressable onPress={() => { openOptionChartForSymbol(ceSym); setActiveLeg(null); }} style={[styles.pillIcon, { backgroundColor: colors.blue }]} hitSlop={6}>
                 <Ionicons name="stats-chart" size={13} color="#fff" />
               </Pressable>
-              <Pressable onPress={() => { openOrderSheet(ceSym, 'buy'); setActiveLeg(null); }} style={[styles.pill, { backgroundColor: colors.green }]} hitSlop={6}>
+              <Pressable onPress={() => { openOrderSheet(ceSym, 'buy', item.ce); setActiveLeg(null); }} style={[styles.pill, { backgroundColor: colors.green }]} hitSlop={6}>
                 <Text style={styles.pillTxt}>BUY</Text>
               </Pressable>
             </View>
@@ -232,13 +243,13 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         >
           {peActive ? (
             <View style={styles.pillRow}>
-              <Pressable onPress={() => { openOrderSheet(peSym, 'sell'); setActiveLeg(null); }} style={[styles.pill, { backgroundColor: colors.red }]} hitSlop={6}>
+              <Pressable onPress={() => { openOrderSheet(peSym, 'sell', item.pe); setActiveLeg(null); }} style={[styles.pill, { backgroundColor: colors.red }]} hitSlop={6}>
                 <Text style={styles.pillTxt}>SELL</Text>
               </Pressable>
               <Pressable onPress={() => { openOptionChartForSymbol(peSym); setActiveLeg(null); }} style={[styles.pillIcon, { backgroundColor: colors.blue }]} hitSlop={6}>
                 <Ionicons name="stats-chart" size={13} color="#fff" />
               </Pressable>
-              <Pressable onPress={() => { openOrderSheet(peSym, 'buy'); setActiveLeg(null); }} style={[styles.pill, { backgroundColor: colors.green }]} hitSlop={6}>
+              <Pressable onPress={() => { openOrderSheet(peSym, 'buy', item.pe); setActiveLeg(null); }} style={[styles.pill, { backgroundColor: colors.green }]} hitSlop={6}>
                 <Text style={styles.pillTxt}>BUY</Text>
               </Pressable>
             </View>

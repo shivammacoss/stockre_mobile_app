@@ -106,6 +106,11 @@ const MarketScreen: React.FC = () => {
   const [indianSearching, setIndianSearching] = useState(false);
   const indianSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Prices seeded from route params (e.g. OptionChain -> order-sheet
+  // deep link). Stored per-symbol so the fallback works for any option
+  // leg the user drills into.
+  const [seedPrices, setSeedPrices] = useState<Record<string, { bid: number; ask: number; lastPrice: number }>>({});
+
   // Order panel state
   const [orderSheetOpen, setOrderSheetOpen] = useState(false);
   const [orderSymbol, setOrderSymbol] = useState('XAUUSD');
@@ -345,6 +350,10 @@ const MarketScreen: React.FC = () => {
     }
     // Also check search results
     if (isIndianSegment && indianResults.some((i: any) => i.symbol === sym)) return true;
+    // Option-contract tradingsymbol pattern: e.g. HDFCLIFE26APR480CE,
+    // NIFTY25APR23000PE. These are deep-linked from OptionChainScreen
+    // and aren't in instrumentsByCategory, so the normal check misses.
+    if (/^[A-Z]+\d{2}[A-Z]{3}\d+(CE|PE|FUT)$/.test(sym)) return true;
     return false;
   }, [instrumentsByCategory, isIndianSegment, indianResults]);
 
@@ -455,20 +464,36 @@ const MarketScreen: React.FC = () => {
   };
 
   // Deep-link hook — when another screen (e.g. OptionChain) navigates here
-  // with { openOrderFor: 'SYMBOL', preferredSide: 'buy'|'sell' }, open the
-  // order sheet on mount with that symbol + side pre-selected. Reset the
-  // params after consuming so pull-to-refresh / re-focus don't re-fire.
+  // with { openOrderFor, preferredSide, seedBid, seedAsk, seedLtp }, open
+  // the order sheet on mount with that symbol + side pre-selected and
+  // seed the price fallback so Bid/Ask/LTP actually render (options aren't
+  // on the mobile WS feed). Params cleared after consuming.
   useEffect(() => {
     const sym = route.params?.openOrderFor;
     if (!sym) return;
     const side = route.params?.preferredSide;
+    const seedBid = Number(route.params?.seedBid || 0);
+    const seedAsk = Number(route.params?.seedAsk || 0);
+    const seedLtp = Number(route.params?.seedLtp || 0);
+    if (seedBid > 0 || seedAsk > 0 || seedLtp > 0) {
+      setSeedPrices((prev) => ({
+        ...prev,
+        [String(sym)]: { bid: seedBid, ask: seedAsk, lastPrice: seedLtp },
+      }));
+    }
     openOrderSheet(String(sym));
     if (side === 'buy' || side === 'sell') {
       // openOrderSheet resets side to 'buy' by default; override after.
       setOrderSide(side);
     }
-    navigation.setParams?.({ openOrderFor: undefined, preferredSide: undefined });
-  }, [route.params?.openOrderFor, route.params?.preferredSide]);
+    navigation.setParams?.({
+      openOrderFor: undefined,
+      preferredSide: undefined,
+      seedBid: undefined,
+      seedAsk: undefined,
+      seedLtp: undefined,
+    });
+  }, [route.params?.openOrderFor, route.params?.preferredSide, route.params?.seedBid, route.params?.seedAsk, route.params?.seedLtp]);
 
   const handlePlaceOrder = async () => {
     if (!user?.id && !user?.oderId) return;
@@ -522,7 +547,14 @@ const MarketScreen: React.FC = () => {
     setFavourites(prev => prev.includes(sym) ? prev.filter(s => s !== sym) : [...prev, sym]);
   };
 
-  const orderPrice = prices[orderSymbol];
+  // Seeded prices for symbols that aren't on the mobile WS tick feed
+  // (mainly option contracts deep-linked from OptionChainScreen). Keyed
+  // by tradingsymbol so multiple legs can coexist; live WS ticks always
+  // win when present.
+  const orderPrice =
+    prices[orderSymbol] ||
+    seedPrices[orderSymbol] ||
+    undefined;
 
   // Resolve the active instrument object (for lotSize, exchange, etc.)
   const activeInstrument: any = useMemo(() => {
