@@ -436,6 +436,24 @@ const MarketScreen: React.FC = () => {
     navigation.navigate('Chart', { symbol: sym });
   };
 
+  // Open the Option Chain screen for the underlying of whatever option /
+  // future / equity is currently selected. Strips expiry/strike tails so
+  // HDFCBANK25APR800CE -> HDFCBANK, NIFTY25APR23000PE -> NIFTY. Auto-picks
+  // segment by underlying — only called for Indian symbols (button hides
+  // otherwise; see renderOptionTradeBtn).
+  const openOptionChainForSymbol = (sym: string) => {
+    closeSheet();
+    const underlyingName = (sym.match(/^[A-Z]+/)?.[0] || sym).toUpperCase();
+    const MCX_UNDERLYINGS = ['GOLD', 'GOLDM', 'SILVER', 'SILVERM', 'CRUDEOIL', 'NATURALGAS', 'COPPER', 'ZINC', 'ALUMINIUM', 'LEAD', 'NICKEL'];
+    const BSE_UNDERLYINGS = ['SENSEX', 'BANKEX'];
+    const seg = MCX_UNDERLYINGS.includes(underlyingName)
+      ? 'MCX'
+      : BSE_UNDERLYINGS.includes(underlyingName)
+        ? 'BSE'
+        : 'NSE';
+    navigation.navigate('OptionChain', { segment: seg, underlying: underlyingName });
+  };
+
   // Deep-link hook — when another screen (e.g. OptionChain) navigates here
   // with { openOrderFor: 'SYMBOL' }, open the order sheet on mount. Reset
   // the param after consuming so pull-to-refresh / re-focus don't re-fire.
@@ -730,29 +748,6 @@ const MarketScreen: React.FC = () => {
             <View {...sheetPanResponder.panHandlers} style={styles.sheetHeader}>
               <View style={[styles.handleBar, { backgroundColor: colors.t3 }]} />
               <View style={{ position: 'absolute', right: 12, top: 6, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                {/* Option Chain — shown only for Indian symbols (NSE/BSE/MCX
-                    have F&O contracts). Strips any expiry/strike suffix to
-                    get the underlying (HDFCBANK25APR800CE -> HDFCBANK). */}
-                {isOrderIndian && (
-                  <Pressable
-                    onPress={() => {
-                      closeSheet();
-                      const underlyingName = (orderSymbol.match(/^[A-Z]+/)?.[0] || orderSymbol).toUpperCase();
-                      const MCX_UNDERLYINGS = ['GOLD', 'GOLDM', 'SILVER', 'SILVERM', 'CRUDEOIL', 'NATURALGAS', 'COPPER', 'ZINC', 'ALUMINIUM', 'LEAD', 'NICKEL'];
-                      const BSE_UNDERLYINGS = ['SENSEX', 'BANKEX'];
-                      const seg = MCX_UNDERLYINGS.includes(underlyingName)
-                        ? 'MCX'
-                        : BSE_UNDERLYINGS.includes(underlyingName)
-                          ? 'BSE'
-                          : 'NSE';
-                      navigation.navigate('OptionChain', { segment: seg, underlying: underlyingName });
-                    }}
-                    style={[styles.sheetIconBtn, { backgroundColor: colors.bg3, borderColor: colors.border }]}
-                    hitSlop={8}
-                  >
-                    <Ionicons name="options-outline" size={16} color={colors.blue} />
-                  </Pressable>
-                )}
                 <Pressable
                   onPress={() => { closeSheet(); openChartForSymbol(orderSymbol); }}
                   style={[styles.sheetIconBtn, { backgroundColor: colors.bg3, borderColor: colors.border }]}
@@ -841,6 +836,19 @@ const MarketScreen: React.FC = () => {
                       <Text style={{ color: orderSide === 'buy' ? '#fff' : '#22c55e', fontSize: 16, fontWeight: '700' }}>{fmtP(orderSymbol, orderPrice?.ask)}</Text>
                     </TouchableOpacity>
                   </View>
+                  {/* Option Trade shortcut — opens the Option Chain for this
+                      instrument's underlying. Indian symbols only (NSE/BSE/
+                      MCX have F&O; forex/crypto-perp don't). */}
+                  {isOrderIndian && (
+                    <TouchableOpacity
+                      style={[styles.optionTradeBtn, { borderColor: colors.blue, backgroundColor: colors.blueDim }]}
+                      onPress={() => openOptionChainForSymbol(orderSymbol)}
+                      activeOpacity={0.85}
+                    >
+                      <Ionicons name="options-outline" size={16} color={colors.blue} />
+                      <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700', letterSpacing: 0.4 }}>OPTION TRADE</Text>
+                    </TouchableOpacity>
+                  )}
                   {orderType !== 'market' && (
                     <View style={styles.inputGroup}>
                       <Text style={[styles.inputLabel, { color: colors.t2 }]}>{orderType === 'limit' ? 'Limit Price' : 'Stop Price'}</Text>
@@ -936,6 +944,18 @@ const MarketScreen: React.FC = () => {
                       </Text>
                     </TouchableOpacity>
                   </View>
+                  {/* Option Trade shortcut — opens the Option Chain for this
+                      instrument's underlying. Indian symbols only. */}
+                  {isOrderIndian && (
+                    <TouchableOpacity
+                      style={[styles.optionTradeBtn, { borderColor: colors.blue, backgroundColor: colors.blueDim }]}
+                      onPress={() => openOptionChainForSymbol(orderSymbol)}
+                      activeOpacity={0.85}
+                    >
+                      <Ionicons name="options-outline" size={16} color={colors.blue} />
+                      <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700', letterSpacing: 0.4 }}>OPTION TRADE</Text>
+                    </TouchableOpacity>
+                  )}
                   {orderType !== 'market' && (
                     <View style={styles.inputGroup}>
                       <Text style={[styles.inputLabel, { color: colors.t2 }]}>{orderType === 'limit' ? 'Limit Price' : 'Trigger Price'}</Text>
@@ -1173,6 +1193,17 @@ const styles = StyleSheet.create({
   marginRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 },
   marginDivider: { height: 1, marginVertical: 6 },
   sheetSymbolHeader: { paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 1 },
+  optionTradeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    marginTop: -4,
+    marginBottom: 14,
+  },
   sheetIconBtn: { width: 32, height: 32, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   ohlcRow: { flexDirection: 'row', alignItems: 'center' },
   ohlcCell: { flex: 1 },

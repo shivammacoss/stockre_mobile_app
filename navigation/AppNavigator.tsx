@@ -203,7 +203,7 @@ const AppNavigator: React.FC = () => {
     );
   }
 
-  const handleSheetSelect = (screen: 'Profile' | 'Business' | 'Wallet' | 'Reports' | 'OptionChain') => {
+  const handleSheetSelect = (screen: 'Profile' | 'Business' | 'Wallet' | 'Reports') => {
     navRef.navigate(screen as never);
   };
 
