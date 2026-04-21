@@ -133,8 +133,6 @@ const MarketScreen: React.FC = () => {
   const [binaryExpiry, setBinaryExpiry] = useState(300);
   const [wallet, setWallet] = useState<any>(null);
   const [walletINR, setWalletINR] = useState<{ balance: number }>({ balance: 0 });
-  const [walletUSD, setWalletUSD] = useState<{ balance: number }>({ balance: 0 });
-  const [displayCurrency, setDisplayCurrency] = useState<'USD' | 'INR'>('INR');
 
   // Animated bottom-sheet: translateY drives both open/close + swipe
   const sheetAnim = useRef(new Animated.Value(SH)).current;          // starts off-screen
@@ -194,7 +192,6 @@ const MarketScreen: React.FC = () => {
     setIndianResults([]);
     setWallet(null);
     setWalletINR({ balance: 0 });
-    setWalletUSD({ balance: 0 });
     loadData();
   }, [user?.id, user?.oderId]);
 
@@ -210,10 +207,7 @@ const MarketScreen: React.FC = () => {
       const uid = user?.oderId || user?.id || '';
       const res = await walletAPI.getUserWallet(uid);
       if (res.data?.wallet) setWallet(res.data.wallet);
-      // Native per-currency balances (walletINR.balance, walletUSD.balance) so
-      // the footer shows the exact rupees the user deposited — no FX drift.
       if (res.data?.walletINR) setWalletINR(res.data.walletINR);
-      if (res.data?.walletUSD) setWalletUSD(res.data.walletUSD);
     } catch (_) {}
   };
 
@@ -796,31 +790,12 @@ const MarketScreen: React.FC = () => {
         }
       />
 
-      {/* ── BOTTOM STATUS BAR (matches Image 1: symbol, Bal, USD/INR, ▼ More) ── */}
+      {/* ── BOTTOM STATUS BAR (INR only) ── */}
       <View style={[styles.bottomBar, { backgroundColor: colors.bg1, borderTopColor: colors.border }]}>
         <Text style={{ color: colors.blue, fontSize: 11, fontWeight: '600' }}>{orderSymbol || 'XAUUSD'}</Text>
         <Text style={{ color: colors.t2, fontSize: 11 }}>
-          Bal {displayCurrency === 'INR' ? '₹' : '$'}
-          {/* Single source of truth: same native field the Wallet page uses. */}
-          {displayCurrency === 'INR'
-            ? Number(walletINR.balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-            : Number(walletUSD.balance || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-          }
+          Bal ₹{Number(walletINR.balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
         </Text>
-        <View style={{ flexDirection: 'row', gap: 0 }}>
-          <TouchableOpacity
-            style={[styles.currPill, { backgroundColor: colors.bg3 }, displayCurrency === 'USD' && { backgroundColor: colors.blue }]}
-            onPress={() => setDisplayCurrency('USD')}
-          >
-            <Text style={{ color: displayCurrency === 'USD' ? '#fff' : colors.t3, fontSize: 10, fontWeight: '600' }}>USD</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.currPill, { backgroundColor: colors.bg3 }, displayCurrency === 'INR' && { backgroundColor: colors.blue }]}
-            onPress={() => setDisplayCurrency('INR')}
-          >
-            <Text style={{ color: displayCurrency === 'INR' ? '#fff' : colors.t3, fontSize: 10, fontWeight: '600' }}>INR</Text>
-          </TouchableOpacity>
-        </View>
       </View>
     </SafeAreaView>
 
@@ -892,7 +867,7 @@ const MarketScreen: React.FC = () => {
               <View style={styles.ohlcRow}>
                 <View style={styles.ohlcCell}>
                   <Text style={[styles.ohlcLabel, { color: colors.t3 }]}>LTP</Text>
-                  <Text style={[styles.ohlcValue, { color: colors.t1 }]}>{fmtP(orderSymbol, orderPrice?.lastPrice ?? orderPrice?.bid)}</Text>
+                  <Text style={[styles.ohlcValue, { color: colors.t1 }]}>{fmtP(orderSymbol, orderPrice?.lastPrice)}</Text>
                 </View>
                 <View style={[styles.ohlcDivider, { backgroundColor: colors.border }]} />
                 <View style={styles.ohlcCell}>

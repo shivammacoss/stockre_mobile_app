@@ -11,7 +11,6 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../theme/ThemeContext';
 import { useSocket } from '../../contexts/SocketContext';
 import { walletAPI, tradingAPI } from '../../services/api';
-import { useUsdInr } from '../../hooks/useUsdInr';
 
 /* ================================================================
    WalletScreen — mirrors web WalletPage
@@ -33,13 +32,8 @@ const WalletScreen: React.FC = () => {
   const [wallet, setWallet] = useState<any>(null);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<WalletTab>('deposit');
-  const [currency, setCurrency] = useState<'USD' | 'INR'>('INR');
+  const currency = 'INR' as const;
   const [amount, setAmount] = useState('');
-  const [exchangeRate, setExchangeRate] = useState({ USD_TO_INR: 83.50, INR_TO_USD: 1 / 83.50 });
-  const [allowedCurrencies, setAllowedCurrencies] = useState({ USD: true, INR: true });
-  // Native per-currency wallets (mirrors server walletUSD/walletINR) so the
-  // user sees the exact amount they deposited regardless of FX rate drift.
-  const [walletUSD, setWalletUSD] = useState<{ balance: number; totalDeposits: number; totalWithdrawals: number }>({ balance: 0, totalDeposits: 0, totalWithdrawals: 0 });
   const [walletINR, setWalletINR] = useState<{ balance: number; totalDeposits: number; totalWithdrawals: number }>({ balance: 0, totalDeposits: 0, totalWithdrawals: 0 });
 
   // Deposit state
@@ -70,17 +64,13 @@ const WalletScreen: React.FC = () => {
     const uid = user?.oderId || user?.id;
     if (!uid) return;
     try {
-      const [walRes, txRes, rateRes] = await Promise.all([
+      const [walRes, txRes] = await Promise.all([
         walletAPI.getUserWallet(uid),
         walletAPI.getTransactions(uid),
-        walletAPI.getExchangeRate(),
       ]);
       if (walRes.data?.wallet) setWallet(walRes.data.wallet);
-      if (walRes.data?.walletUSD) setWalletUSD(walRes.data.walletUSD);
       if (walRes.data?.walletINR) setWalletINR(walRes.data.walletINR);
-      if (walRes.data?.allowedCurrencies) setAllowedCurrencies(walRes.data.allowedCurrencies);
       if (txRes.data?.transactions) setTransactions(txRes.data.transactions);
-      if (rateRes.data?.success && rateRes.data?.rates) setExchangeRate(rateRes.data.rates);
     } catch (_) {}
   }, [user?.id, user?.oderId]);
 
@@ -139,7 +129,7 @@ const WalletScreen: React.FC = () => {
     if (!(numAmt > 0)) { setEligibleBonus(reset); return; }
     const uid = user?.oderId || user?.id;
     if (!uid) return;
-    const inrAmount = currency === 'INR' ? numAmt : numAmt * rate;
+    const inrAmount = numAmt;
     if (bonusTimerRef.current) clearTimeout(bonusTimerRef.current);
     bonusTimerRef.current = setTimeout(async () => {
       try {
@@ -157,7 +147,7 @@ const WalletScreen: React.FC = () => {
       } catch (_) { setEligibleBonus(reset); }
     }, 300);
     return () => { if (bonusTimerRef.current) clearTimeout(bonusTimerRef.current); };
-  }, [amount, currency, activeTab, user?.id, user?.oderId, exchangeRate.USD_TO_INR]);
+  }, [amount, activeTab, user?.id, user?.oderId]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -165,14 +155,8 @@ const WalletScreen: React.FC = () => {
     setRefreshing(false);
   };
 
-  // Live USD→INR rate (socket tick → external API → server markup) so wallet
-  // INR values match the web exactly. Web: $credit × liveRate = ₹credit; if we
-  // use 83.50 here when live is 93.36 the app shows ₹894 instead of ₹1000.
-  const liveUsdInr = useUsdInr();
-
   // ── Live PnL + equity calculation (mirrors web UserLayout) ──
   const n = (v: any) => Number(v || 0);
-  const rate = liveUsdInr.rate || exchangeRate.USD_TO_INR || 83.50;
   const bal = n(wallet?.balance ?? user?.wallet?.balance);
   const cr = n(wallet?.credit);
 
@@ -217,29 +201,8 @@ const WalletScreen: React.FC = () => {
   const eq = bal + cr + totalPnL;
   const fm = Math.max(0, eq - mg);
 
-  const fmtUSD = (v: number) => `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const fmtINR = (v: number) => `₹${(v * rate).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
-  // Native INR/USD formatters that DON'T convert — used when the value is
-  // already in the right currency (walletINR.balance, walletUSD.balance).
-  const fmtINRNative = (v: number) => `₹${v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const fmtUSDNative = (v: number) => `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-  // Per-currency native figures.
-  //  • Balance: walletINR.balance / walletUSD.balance (set at deposit time).
-  //  • Credit:  wallet.creditInr (native INR source of truth). The USD view
-  //    divides by the current live rate so "+₹1000 bonus" always stays
-  //    exactly ₹1000, and the dollar figure tracks the live market.
-  const crInrNative = n(wallet?.creditInr);  // server: native INR credit
-  const balUSD = n(walletUSD?.balance) || bal;
-  const balINR = n(walletINR?.balance) || bal * rate;
-  const crINR = crInrNative > 0 ? crInrNative : cr * rate;     // prefer native INR
-  const crUSD = crInrNative > 0 ? crInrNative / rate : cr;     // live-convert to USD
-  const eqUSD = balUSD + crUSD + totalPnL;
-  const eqINR = balINR + crINR + totalPnL * rate;
-  const mgUSD = mg;
-  const mgINR = mg * rate;
-  const fmUSD = Math.max(0, eqUSD - mgUSD);
-  const fmINR = Math.max(0, eqINR - mgINR);
+  // INR-only formatter
+  const fmtINR = (v: number) => `₹${v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   // ── Submit deposit/withdrawal ──
   const handleSubmit = async () => {
@@ -256,7 +219,7 @@ const WalletScreen: React.FC = () => {
     }
     if (activeTab === 'withdrawal') {
       if (numAmount > fm) {
-        Alert.alert('Error', `Amount exceeds free margin (${currency === 'INR' ? fmtINR(fm) : fmtUSD(fm)})`);
+        Alert.alert('Error', `Amount exceeds free margin (${fmtINR(fm)})`);
         return;
       }
       if ((withdrawMethod === 'bank' || withdrawMethod === 'upi') &&
@@ -333,37 +296,20 @@ const WalletScreen: React.FC = () => {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 130 }}
       >
-        {/* ── HERO BALANCE CARD (matches web mobi-balance-card) ── */}
+        {/* ── HERO BALANCE CARD (INR only) ── */}
         <View style={[styles.heroCard, { backgroundColor: colors.blue }]}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>
-              {currency === 'INR' ? 'Balance (INR)' : 'Balance (USD)'}
-            </Text>
-            <View style={{ flexDirection: 'row', gap: 6 }}>
-              {allowedCurrencies.USD && (
-                <TouchableOpacity style={[styles.heroCurrBtn, currency === 'USD' && styles.heroCurrActive]} onPress={() => setCurrency('USD')}>
-                  <Text style={{ color: '#fff', fontSize: 11, fontWeight: currency === 'USD' ? '700' : '400' }}>USD</Text>
-                </TouchableOpacity>
-              )}
-              {allowedCurrencies.INR && (
-                <TouchableOpacity style={[styles.heroCurrBtn, currency === 'INR' && styles.heroCurrActive]} onPress={() => setCurrency('INR')}>
-                  <Text style={{ color: '#fff', fontSize: 11, fontWeight: currency === 'INR' ? '700' : '400' }}>INR</Text>
-                </TouchableOpacity>
-              )}
-            </View>
+          <View style={{ marginBottom: 12 }}>
+            <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Balance (₹)</Text>
           </View>
-          <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#fff', fontSize: 28, fontWeight: '800', marginBottom: 4 }}>
-            {currency === 'INR' ? fmtINRNative(balINR) : fmtUSDNative(balUSD)}
-          </Text>
-          <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 11, marginBottom: 14 }}>
-            1 USD = ₹{rate.toFixed(2)}
+          <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#fff', fontSize: 28, fontWeight: '800', marginBottom: 14 }}>
+            {fmtINR(bal)}
           </Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
             {[
-              { label: 'Equity',      val: currency === 'INR' ? fmtINRNative(eqINR) : fmtUSDNative(eqUSD) },
-              { label: 'Margin',      val: currency === 'INR' ? fmtINRNative(mgINR) : fmtUSDNative(mgUSD) },
-              { label: 'Free Margin', val: currency === 'INR' ? fmtINRNative(fmINR) : fmtUSDNative(fmUSD) },
-              { label: 'Credit',      val: currency === 'INR' ? fmtINRNative(crINR) : fmtUSDNative(crUSD) },
+              { label: 'Equity',      val: fmtINR(eq) },
+              { label: 'Margin',      val: fmtINR(mg) },
+              { label: 'Free Margin', val: fmtINR(fm) },
+              { label: 'Credit',      val: fmtINR(cr) },
             ].map((s, i) => (
               <View key={i} style={{ width: '47%' as any }}>
                 <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 10 }}>{s.label}</Text>
@@ -375,17 +321,10 @@ const WalletScreen: React.FC = () => {
             <View style={{ borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.15)', paddingTop: 10 }}>
               <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 10 }}>Floating P/L</Text>
               <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: totalPnL >= 0 ? '#4ade80' : '#f87171', fontSize: 14, fontWeight: '700' }}>
-                {totalPnL >= 0 ? '+' : ''}{currency === 'INR' ? fmtINR(totalPnL) : fmtUSD(totalPnL)}
+                {totalPnL >= 0 ? '+' : ''}{fmtINR(totalPnL)}
               </Text>
             </View>
           )}
-        </View>
-
-        {/* ── Exchange rate bar ── */}
-        <View style={{ paddingHorizontal: 14, paddingVertical: 6 }}>
-          <Text style={{ color: colors.t3, fontSize: 10 }}>
-            USD/INR: ₹{rate.toFixed(2)} (Live){totalPnL !== 0 ? `  ·  P/L: ${totalPnL >= 0 ? '+' : ''}${currency === 'INR' ? fmtINR(totalPnL) : fmtUSD(totalPnL)}` : ''}
-          </Text>
         </View>
 
         {/* ── DEPOSIT / WITHDRAWAL FORM ── */}
@@ -400,34 +339,13 @@ const WalletScreen: React.FC = () => {
             </TouchableOpacity>
           </View>
 
-          {/* Currency selection */}
-          <Text style={[styles.fieldLabel, { color: colors.t3 }]}>Select Currency</Text>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {allowedCurrencies.USD && (
-              <TouchableOpacity
-                style={[styles.currBtn, { borderColor: currency === 'USD' ? colors.blue : colors.border, backgroundColor: currency === 'USD' ? colors.blueDim : 'transparent' }]}
-                onPress={() => setCurrency('USD')}
-              >
-                <Text style={{ color: currency === 'USD' ? colors.blue : colors.t3, fontWeight: currency === 'USD' ? '600' : '400', fontSize: 13 }}>USD ($)</Text>
-              </TouchableOpacity>
-            )}
-            {allowedCurrencies.INR && (
-              <TouchableOpacity
-                style={[styles.currBtn, { borderColor: currency === 'INR' ? colors.blue : colors.border, backgroundColor: currency === 'INR' ? colors.blueDim : 'transparent' }]}
-                onPress={() => setCurrency('INR')}
-              >
-                <Text style={{ color: currency === 'INR' ? colors.blue : colors.t3, fontWeight: currency === 'INR' ? '600' : '400', fontSize: 13 }}>INR (₹)</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
           {/* Withdrawal info bar */}
           {activeTab === 'withdrawal' && (
             <View style={[styles.infoBar, { backgroundColor: mg > 0 ? 'rgba(245,158,11,0.12)' : 'rgba(16,185,129,0.12)', borderColor: mg > 0 ? 'rgba(245,158,11,0.3)' : 'rgba(16,185,129,0.3)' }]}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
                 <Text style={{ color: colors.t3, fontSize: 12 }}>Available for Withdrawal</Text>
                 <Text style={{ color: mg > 0 ? '#f59e0b' : '#10b981', fontSize: 14, fontWeight: '700' }}>
-                  {currency === 'INR' ? fmtINR(fm) : fmtUSD(fm)}
+                  {fmtINR(fm)}
                 </Text>
               </View>
               {mg > 0 && (
@@ -437,24 +355,17 @@ const WalletScreen: React.FC = () => {
           )}
 
           {/* Amount input */}
-          <Text style={[styles.fieldLabel, { color: colors.t3 }]}>Amount ({currency === 'USD' ? '$' : '₹'})</Text>
+          <Text style={[styles.fieldLabel, { color: colors.t3 }]}>Amount (₹)</Text>
           <TextInput
             style={[styles.amountInput, { backgroundColor: colors.bg3, borderColor: colors.border, color: colors.t1 }]}
             placeholder={activeTab === 'withdrawal'
-              ? `Max: ${currency === 'INR' ? fmtINR(fm) : fmtUSD(fm)}`
-              : `Enter amount in ${currency}`}
+              ? `Max: ${fmtINR(fm)}`
+              : 'Enter amount in ₹'}
             placeholderTextColor={colors.t3}
             keyboardType="decimal-pad"
             value={amount}
             onChangeText={setAmount}
           />
-          {amount ? (
-            <Text style={{ color: colors.t3, fontSize: 11, marginTop: 4 }}>
-              {currency === 'USD'
-                ? `≈ ₹${(parseFloat(amount) * rate).toFixed(2)} INR`
-                : `≈ $${(parseFloat(amount) / rate).toFixed(2)} USD`}
-            </Text>
-          ) : null}
 
           {/* Eligible bonus hint (matches web Fix 21c) */}
           {activeTab === 'deposit' && amount && parseFloat(amount) > 0 && eligibleBonus.amount > 0 && (

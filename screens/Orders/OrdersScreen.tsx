@@ -12,7 +12,6 @@ import { useTheme } from '../../theme/ThemeContext';
 import { tradingAPI, walletAPI } from '../../services/api';
 import AppHeader from '../../components/AppHeader';
 import MobileStatusFooter from '../../components/MobileStatusFooter';
-import { useUsdInr } from '../../hooks/useUsdInr';
 
 // Indian instrument detector (Zerodha categories or exchange)
 const INDIAN_EXCHANGES = new Set(['NSE', 'BSE', 'NFO', 'BFO', 'MCX']);
@@ -84,13 +83,8 @@ const OrdersScreen: React.FC = () => {
   const [legEditTP, setLegEditTP] = useState('');
   const [legEditLoading, setLegEditLoading] = useState(false);
 
-  // Footer / currency toggle
-  const [displayCurrency, setDisplayCurrency] = useState<'USD' | 'INR'>('INR');
-  // Native per-currency balances (same source as Market + Wallet pages) so
-  // the Orders footer shows the exact ₹ the user deposited — no FX drift.
+  // Footer balance
   const [walletINR, setWalletINR] = useState<{ balance: number }>({ balance: 0 });
-  const [walletUSD, setWalletUSD] = useState<{ balance: number }>({ balance: 0 });
-  const { rate: effectiveRate } = useUsdInr();
 
   useEffect(() => {
     const uid = user?.oderId || user?.id;
@@ -98,36 +92,23 @@ const OrdersScreen: React.FC = () => {
     walletAPI.getUserWallet(uid)
       .then(res => {
         if (res.data?.walletINR) setWalletINR(res.data.walletINR);
-        if (res.data?.walletUSD) setWalletUSD(res.data.walletUSD);
       })
       .catch(() => {});
   }, [user?.id, user?.oderId]);
 
-  // Web-parity P/L formatter — converts USD↔INR based on displayCurrency.
-  // Server stores Indian profits in INR, international in USD.
-  const formatPnl = useCallback((pnl: number, pos: any) => {
+  // INR-only P/L formatter. Server stores Indian profits in INR,
+  // international in USD — display shows INR for all.
+  const formatPnl = useCallback((pnl: number, _pos?: any) => {
     const sign = pnl >= 0 ? '+' : '-';
     const abs = Math.abs(pnl);
-    const indian = isIndianPos(pos);
-    if (indian) {
-      return displayCurrency === 'USD'
-        ? `${sign}$${(abs / effectiveRate).toFixed(2)}`
-        : `${sign}₹${abs.toFixed(2)}`;
-    }
-    return displayCurrency === 'INR'
-      ? `${sign}₹${(abs * effectiveRate).toFixed(2)}`
-      : `${sign}$${abs.toFixed(2)}`;
-  }, [displayCurrency, effectiveRate]);
+    return `${sign}₹${abs.toFixed(2)}`;
+  }, []);
 
-  // Input is already pre-converted to the display currency by callers.
-  // Previously this multiplied by effectiveRate, which double-counted the FX
-  // for Indian positions (whose raw P/L is already in INR) — reported as
-  // ~93x the real value on mixed / Indian-only accounts.
   const formatTotalPnl = useCallback((pnl: number) => {
     const sign = pnl >= 0 ? '+' : '-';
     const abs = Math.abs(pnl);
-    return displayCurrency === 'INR' ? `${sign}₹${abs.toFixed(2)}` : `${sign}$${abs.toFixed(2)}`;
-  }, [displayCurrency]);
+    return `${sign}₹${abs.toFixed(2)}`;
+  }, []);
 
   useEffect(() => { loadData(); }, [user?.id]);
 
@@ -317,7 +298,7 @@ const OrdersScreen: React.FC = () => {
       { text: 'Yes, Cancel', style: 'destructive', onPress: async () => {
         try {
           const uid = user?.oderId || user?.id || '';
-          await tradingAPI.cancelPendingOrder({ userId: uid, orderId: order.oderId || order._id });
+          await tradingAPI.cancelPendingOrder({ userId: uid, orderId: order.oderId || order._id, mode: order.mode || 'netting' });
           loadData();
         } catch (e: any) { Alert.alert('Error', e?.response?.data?.error || e.message); }
       }},
@@ -348,13 +329,12 @@ const OrdersScreen: React.FC = () => {
   };
 
   // calcLivePnl returns each position's P/L in its native currency — INR for
-  // Indian symbols, USD for international. Aggregate into INR first (the
-  // wallet + ledger base), then convert to display currency for the UI.
+  // Indian symbols, USD for international. All displayed in INR.
   const totalPnlInr = positions.reduce((s, p) => {
     const raw = calcLivePnl(p);
-    return s + (isIndianPos(p) ? raw : raw * effectiveRate);
+    return s + raw; // already INR (server settles in INR)
   }, 0);
-  const totalPnl = displayCurrency === 'INR' ? totalPnlInr : totalPnlInr / effectiveRate;
+  const totalPnl = totalPnlInr;
   const marginUsed = positions.reduce((s, p) => s + Number(p.marginUsed || p.margin || 0), 0);
   const ledgerBalance = Number(walletINR?.balance || 0);
   // Available = deposited funds minus margin locked in open trades, plus live M2M.
@@ -415,19 +395,12 @@ const OrdersScreen: React.FC = () => {
           const totalUsd = Number(pos.commission) || 0;
           const commUsd = openUsd > 0 ? openUsd : totalUsd;
           const commInr = Number(pos.openCommissionInr) || Number(pos.commissionInr) || 0;
-          const effRate = effectiveRate || 83.5;
-          const showInr = displayCurrency === 'INR';
-          const indian = isIndianPos(pos);
-          const displayVal = showInr
-            ? (commInr > 0 ? commInr : commUsd * effRate)
-            : (commInr > 0 ? commInr / effRate : commUsd);
-          const sym = showInr ? '₹' : '$';
+          const displayVal = commInr > 0 ? commInr : commUsd * 83;
+          const sym = '₹';
           // Swap: same pattern
           const swapUsd = Number(pos.swap) || 0;
           const swapInr = Number(pos.swapInr) || 0;
-          const swapVal = showInr
-            ? (swapInr !== 0 ? swapInr : swapUsd * effRate)
-            : (swapInr !== 0 ? swapInr / effRate : swapUsd);
+          const swapVal = swapInr !== 0 ? swapInr : swapUsd * 83;
           return (
             <>
               <Row label="Commission" value={`${sym}${displayVal.toFixed(2)}`} colors={colors} />
@@ -547,14 +520,10 @@ const OrdersScreen: React.FC = () => {
         }
       />
 
-      {/* ── Mobile Status Footer (symbol / balance / USD-INR toggle) ── */}
+      {/* ── Mobile Status Footer (INR only) ── */}
       <MobileStatusFooter
         symbol={positions[0]?.symbol}
-        balanceUsd={walletUSD.balance}
         balanceInr={walletINR.balance}
-        displayCurrency={displayCurrency}
-        onCurrencyChange={setDisplayCurrency}
-        rate={effectiveRate}
       />
 
       {/* ── Edit SL/TP Modal ── */}

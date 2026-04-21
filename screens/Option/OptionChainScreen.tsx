@@ -221,18 +221,12 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     const peLtp = Number(peLive?.lastPrice ?? item.pe?.ltp ?? 0);
     const ceClose = Number(item.ce?.close ?? 0);
     const peClose = Number(item.pe?.close ?? 0);
-    // Compute Δ% the same way as the web: (ltp - close) / close * 100.
-    // Falls back to the tick's `change` field when close is absent.
-    const cePct = (() => {
-      if (ceLtp > 0 && ceClose > 0) return ((ceLtp - ceClose) / ceClose) * 100;
-      if (ceLive?.change !== undefined) return Number(ceLive.change);
-      return null;
-    })();
-    const pePct = (() => {
-      if (peLtp > 0 && peClose > 0) return ((peLtp - peClose) / peClose) * 100;
-      if (peLive?.change !== undefined) return Number(peLive.change);
-      return null;
-    })();
+    const ceOi = Number(item.ce?.oi ?? 0);
+    const peOi = Number(item.pe?.oi ?? 0);
+    // Safe Δ% — strict spec: null when either ltp or close is 0 or
+    // missing. Show '—' in the UI instead of inventing a ratio.
+    const cePct = (ceLtp > 0 && ceClose > 0) ? ((ceLtp - ceClose) / ceClose) * 100 : null;
+    const pePct = (peLtp > 0 && peClose > 0) ? ((peLtp - peClose) / peClose) * 100 : null;
 
     const ceActive = activeLeg?.strike === item.strike && activeLeg.side === 'ce';
     const peActive = activeLeg?.strike === item.strike && activeLeg.side === 'pe';
@@ -275,7 +269,7 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
             </View>
           ) : (
             <>
-              <Text style={[styles.closeCell, { color: colors.t3 }]}>{fmtPrice(ceClose)}</Text>
+              <Text style={[styles.oiCell, { color: colors.t3 }]}>{fmtOI(ceOi)}</Text>
               <View style={styles.legCell}>
                 <Text style={[styles.ltpCell, { color: colors.t1 }]}>{fmtPrice(ceLtp)}</Text>
                 <Text style={[styles.pctCell, { color: cePct === null ? colors.t3 : cePct >= 0 ? colors.green : colors.red }]}>
@@ -333,7 +327,7 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
                   {pePct === null ? '—' : `${pePct >= 0 ? '+' : ''}${pePct.toFixed(2)}%`}
                 </Text>
               </View>
-              <Text style={[styles.closeCell, { color: colors.t3 }]}>{fmtPrice(peClose)}</Text>
+              <Text style={[styles.oiCell, { color: colors.t3 }]}>{fmtOI(peOi)}</Text>
             </>
           )}
         </Pressable>
@@ -341,7 +335,8 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     );
   };
 
-  const spotDisplay = spot?.lastPrice ?? spot?.bid ?? spot?.ask;
+  // Underlying spot — show only lastPrice; bid/ask aren't an LTP.
+  const spotDisplay = spot?.lastPrice;
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg0 }]} edges={['top']}>
@@ -401,12 +396,12 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         <Text style={[styles.sectionLabel, { color: colors.red }]}>Puts</Text>
       </View>
 
-      {/* Column headers — CLOSE · LTP · STRIKE · LTP · CLOSE (web parity).
+      {/* Column headers — OI · LTP · STRIKE · LTP · OI.
           CE / PE wrapper Views mirror the row's sidePressable layout so
           the header cells line up above the row cells. */}
       <View style={[styles.colHeader, { borderBottomColor: colors.border }]}>
         <View style={styles.sidePressable}>
-          <Text style={[styles.hdrCell, styles.closeCell, { color: colors.t3 }]}>CLOSE</Text>
+          <Text style={[styles.hdrCell, styles.oiCell, { color: colors.t3 }]}>OI</Text>
           <Text style={[styles.hdrCell, styles.legCell, { color: colors.t3 }]}>LTP</Text>
         </View>
         <View style={[styles.strikeCell, { borderColor: 'transparent' }]}>
@@ -414,7 +409,7 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         </View>
         <View style={styles.sidePressable}>
           <Text style={[styles.hdrCell, styles.legCell, { color: colors.t3 }]}>LTP</Text>
-          <Text style={[styles.hdrCell, styles.closeCell, { color: colors.t3 }]}>CLOSE</Text>
+          <Text style={[styles.hdrCell, styles.oiCell, { color: colors.t3 }]}>OI</Text>
         </View>
       </View>
 
@@ -512,8 +507,8 @@ const styles = StyleSheet.create({
   // Wraps CLOSE + LTP (CE) or LTP + CLOSE (PE) into one tap area so
   // clicking either column reveals the SELL/chart/BUY pills.
   sidePressable: { flex: 1, flexDirection: 'row', alignItems: 'center' },
-  // CLOSE columns on both ends — fixed narrow width, muted text.
-  closeCell: { width: 56, textAlign: 'center', fontSize: 12, fontWeight: '500' },
+  // OI columns on both ends — fixed narrow width, muted text.
+  oiCell: { width: 56, textAlign: 'center', fontSize: 10, fontWeight: '500' },
   // LTP + Δ% stack. flex so it grows to fill the remaining width.
   legCell: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   ltpCell: { fontSize: 14, fontWeight: '700' },

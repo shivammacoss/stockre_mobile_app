@@ -43,7 +43,6 @@ const HomeScreen: React.FC = () => {
   const [bannerIdx, setBannerIdx] = useState(0);
   const [wallet, setWallet] = useState<any>(null);
   const [walletINR, setWalletINR] = useState<{ balance: number }>({ balance: 0 });
-  const [walletUSD, setWalletUSD] = useState<{ balance: number }>({ balance: 0 });
   const [usdInrRate, setUsdInrRate] = useState(83);
   const [news, setNews] = useState<any[]>([]);
   const [newsLoading, setNewsLoading] = useState(true);
@@ -65,7 +64,6 @@ const HomeScreen: React.FC = () => {
       }
       if (walRes.data?.wallet) setWallet(walRes.data.wallet);
       if (walRes.data?.walletINR) setWalletINR(walRes.data.walletINR);
-      if (walRes.data?.walletUSD) setWalletUSD(walRes.data.walletUSD);
       const rateData = rateRes.data;
       if (rateData?.USD_TO_INR) setUsdInrRate(rateData.USD_TO_INR);
       else if (rateData?.rates?.USD_TO_INR) setUsdInrRate(rateData.rates.USD_TO_INR);
@@ -164,24 +162,11 @@ const HomeScreen: React.FC = () => {
   const fm = Math.max(0, eq - mg);
   const pctChange = bal > 0 ? ((eq - bal) / bal) * 100 : 0;
 
-  // INR-only: fmtUSD kept as alias of INR format so existing call sites render ₹
-  const fmtUSD = (v: number) => `₹${v.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
-  const fmtINR = (v: number) => `₹${(v * rate).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
-  const fmtINRNative = (v: number) => `₹${v.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
-  const fmtUSDNative = (v: number) => `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  // INR-only formatter
+  const fmtINR = (v: number) => `₹${v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtUSD = fmtINR; // alias for existing call sites
 
-  // Wallet is INR-only now — balance, credit, margin, and per-position P/L
-  // all come from the server in ₹. totalPnl (live) is computed in-memory
-  // using INR for Indian and USD for forex; convert forex portion here.
-  const balINR = bal;
-  const crINR = cr;
-  const mgINR = mg;
-  // totalPnl from positions is mixed-currency today — convert forex P&L (USD)
-  // to INR using live rate. Indian P&L is already INR in calcLivePnl above.
-  // For display simplicity, treat totalPnl as INR (forex P&L gets rate-adjusted
-  // for live display while position is open; on close, server stores INR).
-  const eqINR = balINR + crINR + totalPnl;
-  const fmINR = Math.max(0, eqINR - mgINR);
+  // Wallet is INR-only. totalPnl above already converts forex USD→INR.
 
   // Per-position P/L for display
   const calcLivePnl = (pos: any) => {
@@ -286,15 +271,15 @@ const HomeScreen: React.FC = () => {
               </Text>
             </View>
           </View>
-          <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.bigBal, { color: colors.t1 }]}>{fmtINRNative(balINR)}</Text>
+          <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.bigBal, { color: colors.t1 }]}>{fmtINR(bal)}</Text>
           <View style={styles.statsRow}>
             <View style={[styles.statBox, { backgroundColor: colors.bg3 }]}>
               <Text style={[styles.statLabel, { color: colors.t3 }]}>FREE MARGIN</Text>
-              <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.statVal, { color: colors.t1 }]}>{fmtINRNative(fmINR)}</Text>
+              <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.statVal, { color: colors.t1 }]}>{fmtINR(fm)}</Text>
             </View>
             <View style={[styles.statBox, { backgroundColor: colors.bg3 }]}>
               <Text style={[styles.statLabel, { color: colors.t3 }]}>EQUITY</Text>
-              <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.statVal, { color: colors.t1 }]}>{fmtINRNative(eqINR)}</Text>
+              <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.statVal, { color: colors.t1 }]}>{fmtINR(eq)}</Text>
             </View>
           </View>
         </View>

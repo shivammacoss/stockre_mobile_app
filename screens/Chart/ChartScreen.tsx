@@ -29,8 +29,8 @@ function getDataSource(symbol: string): string {
   if (s.includes('NIFTY') || s.includes('BANKNIFTY') || s.includes('SENSEX') || s.endsWith('.NS') || s.endsWith('.BO') || s.includes('SBIN')) return 'zerodha';
   // Crypto
   if (s.includes('BTC') || s.includes('ETH') || s.includes('LTC') || s.includes('XRP') || s.includes('ADA') || s.includes('SOL') || s.includes('DOGE') || s.includes('DOT') || s.includes('AVAX') || s.includes('LINK') || s.includes('MATIC')) return 'delta';
-  // MetaAPI (forex, metals, indices, stocks)
-  return 'metaapi';
+  // Infoway (forex, metals, indices, stocks)
+  return 'infoway';
 }
 
 // Build chart HTML with inline custom datafeed (no external files needed).
@@ -60,7 +60,7 @@ body.light #loading{background:#ffffff;color:#4a587a}
 <script>
 // ─── State ───
 var currentSymbol = 'BTCUSD';
-var currentDataSource = 'metaapi';
+var currentDataSource = 'infoway';
 var API_BASE = '${apiUrl}';
 var livePrices = {};
 var subscriptions = {};
@@ -127,7 +127,7 @@ var Datafeed = {
       var lb=DELTA_LB[res]||604800;
       url=API_BASE+'/api/delta/history/'+encodeURIComponent(sym)+'?resolution='+m.delta+'&lookbackSec='+lb;
     } else {
-      url=API_BASE+'/api/metaapi/historical/'+encodeURIComponent(sym)+'?timeframe='+m.meta+'&limit=500&startTime='+from;
+      url=API_BASE+'/api/infoway/historical/'+encodeURIComponent(sym)+'?timeframe='+m.meta+'&limit=500&startTime='+from;
     }
     var ctrl=new AbortController();
     var tid=setTimeout(function(){ctrl.abort();},15000);
@@ -652,8 +652,8 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
           style={{ flex: 1, backgroundColor: isDark ? '#000' : '#fff' }}
           javaScriptEnabled
           domStorageEnabled
-          originWhitelist={['https://*']}
-          mixedContentMode="never"
+          originWhitelist={['https://*', 'http://*']}
+          mixedContentMode="always"
           allowsInlineMediaPlayback
           onMessage={onWebViewMessage}
           onError={(e: any) => setChartError(`WebView error: ${e?.nativeEvent?.description || 'unknown'}`)}
