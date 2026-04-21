@@ -214,8 +214,11 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     const peSym = item.pe?.symbol;
     const ceLive = ceSym ? prices[ceSym] : null;
     const peLive = peSym ? prices[peSym] : null;
-    const ceLtp = Number(ceLive?.lastPrice ?? ceLive?.bid ?? item.ce?.ltp ?? 0);
-    const peLtp = Number(peLive?.lastPrice ?? peLive?.bid ?? item.pe?.ltp ?? 0);
+    // LTP must not fall back to bid — bid is someone's offer to buy, not a
+    // traded price. If neither live lastPrice nor the REST snapshot LTP
+    // is present, show 0 and let the row render '—' for Δ% naturally.
+    const ceLtp = Number(ceLive?.lastPrice ?? item.ce?.ltp ?? 0);
+    const peLtp = Number(peLive?.lastPrice ?? item.pe?.ltp ?? 0);
     const ceClose = Number(item.ce?.close ?? 0);
     const peClose = Number(item.pe?.close ?? 0);
     // Compute Δ% the same way as the web: (ltp - close) / close * 100.
