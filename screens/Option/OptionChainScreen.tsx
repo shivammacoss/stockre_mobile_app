@@ -141,11 +141,31 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     setRefreshing(false);
   };
 
-  // Tap → open Market screen with the symbol param; Market reads
-  // route.params.openOrderFor and opens its existing order sheet.
-  const handleLegTap = (sym?: string) => {
+  // Tap-to-reveal SELL/chart/BUY pills (mobile equivalent of the web's
+  // hover). Tap a leg's LTP cell -> that cell replaces itself with the
+  // three pills. Tap another row/side or the same cell again -> collapse.
+  const [activeLeg, setActiveLeg] = useState<{ strike: number; side: 'ce' | 'pe' } | null>(null);
+
+  const toggleActiveLeg = (strike: number, side: 'ce' | 'pe', sym?: string) => {
     if (!sym) return;
-    navigation.navigate('MainTabs', { screen: 'Market', params: { openOrderFor: sym } });
+    setActiveLeg((prev) =>
+      prev && prev.strike === strike && prev.side === side ? null : { strike, side }
+    );
+  };
+
+  const openOrderSheet = (sym?: string, side?: 'buy' | 'sell') => {
+    if (!sym) return;
+    // MarketScreen reads route.params.openOrderFor and opens its existing
+    // order sheet on mount with the symbol + side pre-selected.
+    navigation.navigate('MainTabs', {
+      screen: 'Market',
+      params: { openOrderFor: sym, preferredSide: side },
+    });
+  };
+
+  const openOptionChartForSymbol = (sym?: string) => {
+    if (!sym) return;
+    navigation.navigate('Chart', { symbol: sym });
   };
 
   const renderRow = ({ item, index }: { item: Strike; index: number }) => {
@@ -163,21 +183,38 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     const ceChg = Number(ceLive?.change ?? 0);
     const peChg = Number(peLive?.change ?? 0);
 
+    const ceActive = activeLeg?.strike === item.strike && activeLeg.side === 'ce';
+    const peActive = activeLeg?.strike === item.strike && activeLeg.side === 'pe';
+
     return (
       <View style={[styles.row, isAtm && { backgroundColor: colors.blueDim }]}>
         {/* CE side */}
         <Pressable
-          onPress={() => handleLegTap(ceSym)}
+          onPress={() => toggleActiveLeg(item.strike, 'ce', ceSym)}
           style={({ pressed }) => [styles.leg, { opacity: pressed ? 0.6 : 1 }]}
           disabled={!ceSym}
         >
-          <View style={styles.legRow}>
-            <Text style={[styles.oiCell, { color: colors.t3 }]}>{fmtOI(ceOi)}</Text>
-            <Text style={[styles.ltpCell, { color: colors.green }]}>{fmtPrice(ceLtp)}</Text>
-            <Text style={[styles.chgCell, { color: ceChg >= 0 ? colors.green : colors.red }]}>
-              {ceLive && ceChg ? `${ceChg > 0 ? '+' : ''}${ceChg.toFixed(1)}%` : '—'}
-            </Text>
-          </View>
+          {ceActive ? (
+            <View style={styles.pillRow}>
+              <Pressable onPress={() => { openOrderSheet(ceSym, 'sell'); setActiveLeg(null); }} style={[styles.pill, { backgroundColor: colors.red }]} hitSlop={6}>
+                <Text style={styles.pillTxt}>SELL</Text>
+              </Pressable>
+              <Pressable onPress={() => { openOptionChartForSymbol(ceSym); setActiveLeg(null); }} style={[styles.pillIcon, { backgroundColor: colors.blue }]} hitSlop={6}>
+                <Ionicons name="stats-chart" size={13} color="#fff" />
+              </Pressable>
+              <Pressable onPress={() => { openOrderSheet(ceSym, 'buy'); setActiveLeg(null); }} style={[styles.pill, { backgroundColor: colors.green }]} hitSlop={6}>
+                <Text style={styles.pillTxt}>BUY</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.legRow}>
+              <Text style={[styles.oiCell, { color: colors.t3 }]}>{fmtOI(ceOi)}</Text>
+              <Text style={[styles.ltpCell, { color: colors.green }]}>{fmtPrice(ceLtp)}</Text>
+              <Text style={[styles.chgCell, { color: ceChg >= 0 ? colors.green : colors.red }]}>
+                {ceLive && ceChg ? `${ceChg > 0 ? '+' : ''}${ceChg.toFixed(1)}%` : '—'}
+              </Text>
+            </View>
+          )}
         </Pressable>
 
         {/* Strike center */}
@@ -189,17 +226,31 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
         {/* PE side */}
         <Pressable
-          onPress={() => handleLegTap(peSym)}
+          onPress={() => toggleActiveLeg(item.strike, 'pe', peSym)}
           style={({ pressed }) => [styles.leg, { opacity: pressed ? 0.6 : 1 }]}
           disabled={!peSym}
         >
-          <View style={styles.legRow}>
-            <Text style={[styles.chgCell, { color: peChg >= 0 ? colors.green : colors.red }]}>
-              {peLive && peChg ? `${peChg > 0 ? '+' : ''}${peChg.toFixed(1)}%` : '—'}
-            </Text>
-            <Text style={[styles.ltpCell, { color: colors.red }]}>{fmtPrice(peLtp)}</Text>
-            <Text style={[styles.oiCell, { color: colors.t3 }]}>{fmtOI(peOi)}</Text>
-          </View>
+          {peActive ? (
+            <View style={styles.pillRow}>
+              <Pressable onPress={() => { openOrderSheet(peSym, 'sell'); setActiveLeg(null); }} style={[styles.pill, { backgroundColor: colors.red }]} hitSlop={6}>
+                <Text style={styles.pillTxt}>SELL</Text>
+              </Pressable>
+              <Pressable onPress={() => { openOptionChartForSymbol(peSym); setActiveLeg(null); }} style={[styles.pillIcon, { backgroundColor: colors.blue }]} hitSlop={6}>
+                <Ionicons name="stats-chart" size={13} color="#fff" />
+              </Pressable>
+              <Pressable onPress={() => { openOrderSheet(peSym, 'buy'); setActiveLeg(null); }} style={[styles.pill, { backgroundColor: colors.green }]} hitSlop={6}>
+                <Text style={styles.pillTxt}>BUY</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.legRow}>
+              <Text style={[styles.chgCell, { color: peChg >= 0 ? colors.green : colors.red }]}>
+                {peLive && peChg ? `${peChg > 0 ? '+' : ''}${peChg.toFixed(1)}%` : '—'}
+              </Text>
+              <Text style={[styles.ltpCell, { color: colors.red }]}>{fmtPrice(peLtp)}</Text>
+              <Text style={[styles.oiCell, { color: colors.t3 }]}>{fmtOI(peOi)}</Text>
+            </View>
+          )}
         </Pressable>
       </View>
     );
@@ -382,6 +433,12 @@ const styles = StyleSheet.create({
   chgCell: { flex: 1, textAlign: 'center', fontSize: 10 },
 
   strikeCell: { width: 72, alignItems: 'center', justifyContent: 'center', borderLeftWidth: 1, borderRightWidth: 1 },
+
+  // Tap-to-reveal pills (mobile equivalent of the web's hover reveal).
+  pillRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
+  pill: { paddingHorizontal: 8, paddingVertical: 5, borderRadius: 12, minWidth: 46, alignItems: 'center' },
+  pillIcon: { width: 28, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  pillTxt: { color: '#fff', fontSize: 10, fontWeight: '800', letterSpacing: 0.4 },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   modalCard: { width: '100%', maxWidth: 320, borderRadius: 14, borderWidth: 1, paddingVertical: 8, maxHeight: '70%' },

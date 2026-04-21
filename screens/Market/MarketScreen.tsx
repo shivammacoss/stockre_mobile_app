@@ -455,14 +455,20 @@ const MarketScreen: React.FC = () => {
   };
 
   // Deep-link hook — when another screen (e.g. OptionChain) navigates here
-  // with { openOrderFor: 'SYMBOL' }, open the order sheet on mount. Reset
-  // the param after consuming so pull-to-refresh / re-focus don't re-fire.
+  // with { openOrderFor: 'SYMBOL', preferredSide: 'buy'|'sell' }, open the
+  // order sheet on mount with that symbol + side pre-selected. Reset the
+  // params after consuming so pull-to-refresh / re-focus don't re-fire.
   useEffect(() => {
     const sym = route.params?.openOrderFor;
     if (!sym) return;
+    const side = route.params?.preferredSide;
     openOrderSheet(String(sym));
-    navigation.setParams?.({ openOrderFor: undefined });
-  }, [route.params?.openOrderFor]);
+    if (side === 'buy' || side === 'sell') {
+      // openOrderSheet resets side to 'buy' by default; override after.
+      setOrderSide(side);
+    }
+    navigation.setParams?.({ openOrderFor: undefined, preferredSide: undefined });
+  }, [route.params?.openOrderFor, route.params?.preferredSide]);
 
   const handlePlaceOrder = async () => {
     if (!user?.id && !user?.oderId) return;
