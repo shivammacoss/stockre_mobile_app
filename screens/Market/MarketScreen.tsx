@@ -343,6 +343,22 @@ const MarketScreen: React.FC = () => {
     return () => { if (indianSearchTimer.current) clearTimeout(indianSearchTimer.current); };
   }, [search, activeCat, isIndianSegment]);
 
+  // Parse an Indian F&O tradingsymbol into its parts so the order sheet
+  // can render "HDFCLIFE · 525 CE · 28 Apr" instead of a dense
+  // "HDFCLIFE26APR525CE". Returns null for anything that isn't an option
+  // or future — the caller falls back to showing orderSymbol as-is.
+  const parseFnoSymbol = (sym: string): { underlying: string; strike?: number; kind: 'CE' | 'PE' | 'FUT'; expiry: string } | null => {
+    const m = /^([A-Z&]+)(\d{2})([A-Z]{3})(\d*)(CE|PE|FUT)$/.exec((sym || '').toUpperCase());
+    if (!m) return null;
+    const [, underlying, yy, mon, strikeRaw, kind] = m;
+    return {
+      underlying,
+      strike: strikeRaw ? Number(strikeRaw) : undefined,
+      kind: kind as 'CE' | 'PE' | 'FUT',
+      expiry: `${mon} 20${yy}`,
+    };
+  };
+
   // Check if a symbol belongs to an Indian segment (has ₹ pricing)
   const isIndianSymbol = useCallback((sym: string): boolean => {
     for (const cat of Object.keys(ZERODHA_SEGMENT_MAP)) {
@@ -801,7 +817,39 @@ const MarketScreen: React.FC = () => {
 
             {/* Symbol header + OHLC/LTP row */}
             <View style={[styles.sheetSymbolHeader, { borderBottomColor: colors.border }]}>
-              <Text style={{ color: colors.t1, fontSize: 20, fontWeight: '800', letterSpacing: 0.3, marginBottom: 8 }} numberOfLines={1}>{orderSymbol}</Text>
+              {(() => {
+                // For option / future tradingsymbols show the structured
+                // breakdown: "HDFCLIFE · 525 CE" with a muted expiry below.
+                // Falls back to the raw symbol for equities / forex /
+                // crypto where there's nothing to split.
+                const parsed = parseFnoSymbol(orderSymbol);
+                if (parsed) {
+                  const kindColor = parsed.kind === 'CE' ? '#22c55e' : parsed.kind === 'PE' ? '#ef4444' : colors.blue;
+                  return (
+                    <View style={{ marginBottom: 8 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <Text style={{ color: colors.t1, fontSize: 20, fontWeight: '800', letterSpacing: 0.3 }} numberOfLines={1}>
+                          {parsed.underlying}
+                        </Text>
+                        {parsed.strike !== undefined && (
+                          <Text style={{ color: colors.t1, fontSize: 20, fontWeight: '800', letterSpacing: 0.3, marginLeft: 8 }}>
+                            {parsed.strike}
+                          </Text>
+                        )}
+                        <View style={{ backgroundColor: kindColor, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, marginLeft: 8 }}>
+                          <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800', letterSpacing: 0.5 }}>{parsed.kind}</Text>
+                        </View>
+                      </View>
+                      <Text style={{ color: colors.t3, fontSize: 11, fontWeight: '600', marginTop: 2, letterSpacing: 0.3 }}>
+                        EXPIRY · {parsed.expiry}
+                      </Text>
+                    </View>
+                  );
+                }
+                return (
+                  <Text style={{ color: colors.t1, fontSize: 20, fontWeight: '800', letterSpacing: 0.3, marginBottom: 8 }} numberOfLines={1}>{orderSymbol}</Text>
+                );
+              })()}
               <View style={styles.ohlcRow}>
                 <View style={styles.ohlcCell}>
                   <Text style={[styles.ohlcLabel, { color: colors.t3 }]}>LTP</Text>
