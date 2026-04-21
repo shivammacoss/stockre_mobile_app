@@ -343,21 +343,11 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         </TouchableOpacity>
       </View>
 
-      {/* Segment pills */}
-      <View style={[styles.segRow, { backgroundColor: colors.bg3 }]}>
-        {SEGMENTS.map((s) => (
-          <TouchableOpacity
-            key={s}
-            style={[styles.segPill, segment === s && { backgroundColor: colors.blue }]}
-            onPress={() => onSegmentChange(s)}
-            activeOpacity={0.85}
-          >
-            <Text style={{ color: segment === s ? '#fff' : colors.t2, fontSize: 12, fontWeight: '700' }}>
-              {s === 'CRYPTO' ? 'Crypto' : s}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      {/* Segment pills removed — Option Chain is always reached from a
+          specific stock's "OPTION TRADE" button, so segment is already
+          pre-selected by openOptionChainForSymbol in MarketScreen. Kept
+          onSegmentChange around in case the underlying picker needs it
+          later (e.g. switching NIFTY -> SENSEX auto-flips NSE -> BSE). */}
 
       {/* Underlying + expiry selectors */}
       <View style={styles.selectorRow}>
