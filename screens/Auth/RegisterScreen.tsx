@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ActivityIndicator, KeyboardAvoidingView, Platform, Alert, ScrollView,
+  ActivityIndicator, KeyboardAvoidingView, Platform, Alert, ScrollView, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,8 +12,11 @@ import * as SecureStore from 'expo-secure-store';
 
 interface Props { navigation: any }
 
+const logoDark = require('../../assets/stocktre-logo-dark.png');
+const logoLight = require('../../assets/stocktre-logo-light.png');
+
 const RegisterScreen: React.FC<Props> = ({ navigation }) => {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { refreshUser } = useAuth();
 
   const [form, setForm] = useState({
@@ -104,7 +107,7 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="arrow-back" size={24} color={colors.t1} />
         </TouchableOpacity>
-        <Text style={[styles.wordmark, { color: colors.t1 }]}>stocktre</Text>
+        <Image source={isDark ? logoDark : logoLight} style={styles.wordmarkImg} resizeMode="contain" />
         <View style={{ width: 24 }} />
       </View>
 
@@ -300,7 +303,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1,
   },
-  wordmark: { fontSize: 28, fontWeight: '800', letterSpacing: 0.5 },
+  wordmarkImg: { width: 180, height: 40 },
 
   title: { fontSize: 24, fontWeight: '800', letterSpacing: 0.3 },
   subtitle: { fontSize: 13, marginTop: 4, marginBottom: 24 },

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ActivityIndicator, KeyboardAvoidingView, Platform, Alert, ScrollView,
+  ActivityIndicator, KeyboardAvoidingView, Platform, Alert, ScrollView, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,10 +10,13 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../theme/ThemeContext';
 import { API_URL } from '../../config';
 
+const logoDark = require('../../assets/stocktre-logo-dark.png');
+const logoLight = require('../../assets/stocktre-logo-light.png');
+
 const LoginScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const { login, isLoading } = useAuth();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
@@ -58,7 +61,7 @@ const LoginScreen: React.FC = () => {
         >
           {/* Hero */}
           <View style={styles.hero}>
-            <Text style={[styles.wordmark, { color: colors.t1 }]}>stocktre</Text>
+            <Image source={isDark ? logoDark : logoLight} style={styles.wordmarkImg} resizeMode="contain" />
             <Text style={[styles.heroTitle, { color: colors.t1 }]}>Welcome back</Text>
             <Text style={[styles.heroSub, { color: colors.t3 }]}>Sign in to continue trading</Text>
           </View>
@@ -158,7 +161,7 @@ const LoginScreen: React.FC = () => {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   hero: { alignItems: 'center', paddingTop: 20, paddingBottom: 28 },
-  wordmark: { fontSize: 34, fontWeight: '800', letterSpacing: 0.5, marginBottom: 18 },
+  wordmarkImg: { width: 220, height: 46, marginBottom: 18 },
   heroTitle: { fontSize: 22, fontWeight: '800', letterSpacing: 0.3 },
   heroSub: { fontSize: 13, marginTop: 4 },
 
