@@ -154,22 +154,43 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   };
 
   const openOrderSheet = (
-    sym?: string,
-    side?: 'buy' | 'sell',
-    leg?: { bid?: number; ask?: number; ltp?: number } | null
+    sym: string | undefined,
+    side: 'buy' | 'sell',
+    ctx: {
+      strike?: number;
+      type?: 'CE' | 'PE';
+      bid?: number;
+      ask?: number;
+      ltp?: number;
+    } | null = null
   ) => {
     if (!sym) return;
-    // Pass the chain's REST-quote prices along so MarketScreen's order
-    // sheet has a real bid/ask to show — option symbols aren't on the
-    // mobile WS feed so prices[symbol] from useSocket is empty.
+    // Log the full payload so we can confirm in Metro that the clicked
+    // strike is binding correctly — not the premium alone. Symbol is the
+    // already-constructed Zerodha tradingsymbol from the API response
+    // (e.g. HDFCLIFE26APR530CE). Strike + type are extra for clarity;
+    // they aren't required by the order sheet (it parses them from sym)
+    // but they're carried so debug logs + future pages can use them.
+    if (__DEV__) {
+      // eslint-disable-next-line no-console
+      console.log('[OptionChain] onTrade ->', {
+        symbol: sym,
+        side,
+        strike: ctx?.strike,
+        type: ctx?.type,
+        bid: ctx?.bid,
+        ask: ctx?.ask,
+        ltp: ctx?.ltp,
+      });
+    }
     navigation.navigate('MainTabs', {
       screen: 'Market',
       params: {
         openOrderFor: sym,
         preferredSide: side,
-        seedBid: leg?.bid ?? undefined,
-        seedAsk: leg?.ask ?? undefined,
-        seedLtp: leg?.ltp ?? undefined,
+        seedBid: ctx?.bid ?? undefined,
+        seedAsk: ctx?.ask ?? undefined,
+        seedLtp: ctx?.ltp ?? undefined,
       },
     });
   };
@@ -213,13 +234,27 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         >
           {ceActive ? (
             <View style={styles.pillRow}>
-              <Pressable onPress={() => { openOrderSheet(ceSym, 'sell', item.ce); setActiveLeg(null); }} style={[styles.pill, { backgroundColor: colors.red }]} hitSlop={6}>
+              <Pressable
+                onPress={() => {
+                  openOrderSheet(ceSym, 'sell', { strike: item.strike, type: 'CE', bid: item.ce?.bid, ask: item.ce?.ask, ltp: item.ce?.ltp });
+                  setActiveLeg(null);
+                }}
+                style={[styles.pill, { backgroundColor: colors.red }]}
+                hitSlop={6}
+              >
                 <Text style={styles.pillTxt}>SELL</Text>
               </Pressable>
               <Pressable onPress={() => { openOptionChartForSymbol(ceSym); setActiveLeg(null); }} style={[styles.pillIcon, { backgroundColor: colors.blue }]} hitSlop={6}>
                 <Ionicons name="stats-chart" size={13} color="#fff" />
               </Pressable>
-              <Pressable onPress={() => { openOrderSheet(ceSym, 'buy', item.ce); setActiveLeg(null); }} style={[styles.pill, { backgroundColor: colors.green }]} hitSlop={6}>
+              <Pressable
+                onPress={() => {
+                  openOrderSheet(ceSym, 'buy', { strike: item.strike, type: 'CE', bid: item.ce?.bid, ask: item.ce?.ask, ltp: item.ce?.ltp });
+                  setActiveLeg(null);
+                }}
+                style={[styles.pill, { backgroundColor: colors.green }]}
+                hitSlop={6}
+              >
                 <Text style={styles.pillTxt}>BUY</Text>
               </Pressable>
             </View>
@@ -249,13 +284,27 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         >
           {peActive ? (
             <View style={styles.pillRow}>
-              <Pressable onPress={() => { openOrderSheet(peSym, 'sell', item.pe); setActiveLeg(null); }} style={[styles.pill, { backgroundColor: colors.red }]} hitSlop={6}>
+              <Pressable
+                onPress={() => {
+                  openOrderSheet(peSym, 'sell', { strike: item.strike, type: 'PE', bid: item.pe?.bid, ask: item.pe?.ask, ltp: item.pe?.ltp });
+                  setActiveLeg(null);
+                }}
+                style={[styles.pill, { backgroundColor: colors.red }]}
+                hitSlop={6}
+              >
                 <Text style={styles.pillTxt}>SELL</Text>
               </Pressable>
               <Pressable onPress={() => { openOptionChartForSymbol(peSym); setActiveLeg(null); }} style={[styles.pillIcon, { backgroundColor: colors.blue }]} hitSlop={6}>
                 <Ionicons name="stats-chart" size={13} color="#fff" />
               </Pressable>
-              <Pressable onPress={() => { openOrderSheet(peSym, 'buy', item.pe); setActiveLeg(null); }} style={[styles.pill, { backgroundColor: colors.green }]} hitSlop={6}>
+              <Pressable
+                onPress={() => {
+                  openOrderSheet(peSym, 'buy', { strike: item.strike, type: 'PE', bid: item.pe?.bid, ask: item.pe?.ask, ltp: item.pe?.ltp });
+                  setActiveLeg(null);
+                }}
+                style={[styles.pill, { backgroundColor: colors.green }]}
+                hitSlop={6}
+              >
                 <Text style={styles.pillTxt}>BUY</Text>
               </Pressable>
             </View>
