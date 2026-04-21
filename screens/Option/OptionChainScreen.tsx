@@ -236,49 +236,51 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
     return (
       <View style={[styles.row, isAtm && { backgroundColor: colors.blueDim }]}>
-        {/* CE CLOSE */}
-        <Text style={[styles.closeCell, { color: colors.t3 }]}>{fmtPrice(ceClose)}</Text>
-
-        {/* CE LTP (+Δ% below) — tap-to-reveal SELL/chart/BUY pills */}
+        {/* CE side — whole (CLOSE + LTP) area taps to reveal pills.
+            CLOSE stays visible while pills are shown; only the LTP
+            cell swaps for SELL / chart / BUY. Matches tradex. */}
         <Pressable
           onPress={() => toggleActiveLeg(item.strike, 'ce', ceSym)}
-          style={({ pressed }) => [styles.legCell, { opacity: pressed ? 0.6 : 1 }]}
+          style={({ pressed }) => [styles.sidePressable, { opacity: pressed ? 0.6 : 1 }]}
           disabled={!ceSym}
         >
-          {ceActive ? (
-            <View style={styles.pillRow}>
-              <Pressable
-                onPress={() => {
-                  openOrderSheet(ceSym, 'sell', { strike: item.strike, type: 'CE', bid: item.ce?.bid, ask: item.ce?.ask, ltp: item.ce?.ltp });
-                  setActiveLeg(null);
-                }}
-                style={[styles.pill, { backgroundColor: colors.red }]}
-                hitSlop={6}
-              >
-                <Text style={styles.pillTxt}>SELL</Text>
-              </Pressable>
-              <Pressable onPress={() => { openOptionChartForSymbol(ceSym); setActiveLeg(null); }} style={[styles.pillIcon, { backgroundColor: colors.blue }]} hitSlop={6}>
-                <Ionicons name="stats-chart" size={13} color="#fff" />
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  openOrderSheet(ceSym, 'buy', { strike: item.strike, type: 'CE', bid: item.ce?.bid, ask: item.ce?.ask, ltp: item.ce?.ltp });
-                  setActiveLeg(null);
-                }}
-                style={[styles.pill, { backgroundColor: colors.green }]}
-                hitSlop={6}
-              >
-                <Text style={styles.pillTxt}>BUY</Text>
-              </Pressable>
-            </View>
-          ) : (
-            <View style={{ alignItems: 'center' }}>
-              <Text style={[styles.ltpCell, { color: colors.t1 }]}>{fmtPrice(ceLtp)}</Text>
-              <Text style={[styles.pctCell, { color: cePct === null ? colors.t3 : cePct >= 0 ? colors.green : colors.red }]}>
-                {cePct === null ? '—' : `${cePct >= 0 ? '+' : ''}${cePct.toFixed(2)}%`}
-              </Text>
-            </View>
-          )}
+          <Text style={[styles.closeCell, { color: colors.t3 }]}>{fmtPrice(ceClose)}</Text>
+          <View style={styles.legCell}>
+            {ceActive ? (
+              <View style={styles.pillRow}>
+                <Pressable
+                  onPress={() => {
+                    openOrderSheet(ceSym, 'sell', { strike: item.strike, type: 'CE', bid: item.ce?.bid, ask: item.ce?.ask, ltp: item.ce?.ltp });
+                    setActiveLeg(null);
+                  }}
+                  style={[styles.pill, { backgroundColor: colors.red }]}
+                  hitSlop={6}
+                >
+                  <Text style={styles.pillTxt}>SELL</Text>
+                </Pressable>
+                <Pressable onPress={() => { openOptionChartForSymbol(ceSym); setActiveLeg(null); }} style={[styles.pillIcon, { backgroundColor: colors.blue }]} hitSlop={6}>
+                  <Ionicons name="stats-chart" size={13} color="#fff" />
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    openOrderSheet(ceSym, 'buy', { strike: item.strike, type: 'CE', bid: item.ce?.bid, ask: item.ce?.ask, ltp: item.ce?.ltp });
+                    setActiveLeg(null);
+                  }}
+                  style={[styles.pill, { backgroundColor: colors.green }]}
+                  hitSlop={6}
+                >
+                  <Text style={styles.pillTxt}>BUY</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <>
+                <Text style={[styles.ltpCell, { color: colors.t1 }]}>{fmtPrice(ceLtp)}</Text>
+                <Text style={[styles.pctCell, { color: cePct === null ? colors.t3 : cePct >= 0 ? colors.green : colors.red }]}>
+                  {cePct === null ? '—' : `${cePct >= 0 ? '+' : ''}${cePct.toFixed(2)}%`}
+                </Text>
+              </>
+            )}
+          </View>
         </Pressable>
 
         {/* Strike center */}
@@ -288,50 +290,50 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           </Text>
         </View>
 
-        {/* PE LTP (+Δ% below) */}
+        {/* PE side — mirror of CE. LTP on the left, CLOSE on the right. */}
         <Pressable
           onPress={() => toggleActiveLeg(item.strike, 'pe', peSym)}
-          style={({ pressed }) => [styles.legCell, { opacity: pressed ? 0.6 : 1 }]}
+          style={({ pressed }) => [styles.sidePressable, { opacity: pressed ? 0.6 : 1 }]}
           disabled={!peSym}
         >
-          {peActive ? (
-            <View style={styles.pillRow}>
-              <Pressable
-                onPress={() => {
-                  openOrderSheet(peSym, 'sell', { strike: item.strike, type: 'PE', bid: item.pe?.bid, ask: item.pe?.ask, ltp: item.pe?.ltp });
-                  setActiveLeg(null);
-                }}
-                style={[styles.pill, { backgroundColor: colors.red }]}
-                hitSlop={6}
-              >
-                <Text style={styles.pillTxt}>SELL</Text>
-              </Pressable>
-              <Pressable onPress={() => { openOptionChartForSymbol(peSym); setActiveLeg(null); }} style={[styles.pillIcon, { backgroundColor: colors.blue }]} hitSlop={6}>
-                <Ionicons name="stats-chart" size={13} color="#fff" />
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  openOrderSheet(peSym, 'buy', { strike: item.strike, type: 'PE', bid: item.pe?.bid, ask: item.pe?.ask, ltp: item.pe?.ltp });
-                  setActiveLeg(null);
-                }}
-                style={[styles.pill, { backgroundColor: colors.green }]}
-                hitSlop={6}
-              >
-                <Text style={styles.pillTxt}>BUY</Text>
-              </Pressable>
-            </View>
-          ) : (
-            <View style={{ alignItems: 'center' }}>
-              <Text style={[styles.ltpCell, { color: colors.t1 }]}>{fmtPrice(peLtp)}</Text>
-              <Text style={[styles.pctCell, { color: pePct === null ? colors.t3 : pePct >= 0 ? colors.green : colors.red }]}>
-                {pePct === null ? '—' : `${pePct >= 0 ? '+' : ''}${pePct.toFixed(2)}%`}
-              </Text>
-            </View>
-          )}
+          <View style={styles.legCell}>
+            {peActive ? (
+              <View style={styles.pillRow}>
+                <Pressable
+                  onPress={() => {
+                    openOrderSheet(peSym, 'sell', { strike: item.strike, type: 'PE', bid: item.pe?.bid, ask: item.pe?.ask, ltp: item.pe?.ltp });
+                    setActiveLeg(null);
+                  }}
+                  style={[styles.pill, { backgroundColor: colors.red }]}
+                  hitSlop={6}
+                >
+                  <Text style={styles.pillTxt}>SELL</Text>
+                </Pressable>
+                <Pressable onPress={() => { openOptionChartForSymbol(peSym); setActiveLeg(null); }} style={[styles.pillIcon, { backgroundColor: colors.blue }]} hitSlop={6}>
+                  <Ionicons name="stats-chart" size={13} color="#fff" />
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    openOrderSheet(peSym, 'buy', { strike: item.strike, type: 'PE', bid: item.pe?.bid, ask: item.pe?.ask, ltp: item.pe?.ltp });
+                    setActiveLeg(null);
+                  }}
+                  style={[styles.pill, { backgroundColor: colors.green }]}
+                  hitSlop={6}
+                >
+                  <Text style={styles.pillTxt}>BUY</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <>
+                <Text style={[styles.ltpCell, { color: colors.t1 }]}>{fmtPrice(peLtp)}</Text>
+                <Text style={[styles.pctCell, { color: pePct === null ? colors.t3 : pePct >= 0 ? colors.green : colors.red }]}>
+                  {pePct === null ? '—' : `${pePct >= 0 ? '+' : ''}${pePct.toFixed(2)}%`}
+                </Text>
+              </>
+            )}
+          </View>
+          <Text style={[styles.closeCell, { color: colors.t3 }]}>{fmtPrice(peClose)}</Text>
         </Pressable>
-
-        {/* PE CLOSE */}
-        <Text style={[styles.closeCell, { color: colors.t3 }]}>{fmtPrice(peClose)}</Text>
       </View>
     );
   };
@@ -396,15 +398,21 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         <Text style={[styles.sectionLabel, { color: colors.red }]}>Puts</Text>
       </View>
 
-      {/* Column headers — CLOSE · LTP · STRIKE · LTP · CLOSE (web parity) */}
+      {/* Column headers — CLOSE · LTP · STRIKE · LTP · CLOSE (web parity).
+          CE / PE wrapper Views mirror the row's sidePressable layout so
+          the header cells line up above the row cells. */}
       <View style={[styles.colHeader, { borderBottomColor: colors.border }]}>
-        <Text style={[styles.hdrCell, styles.closeCell, { color: colors.t3 }]}>CLOSE</Text>
-        <Text style={[styles.hdrCell, styles.legCell, { color: colors.t3 }]}>LTP</Text>
+        <View style={styles.sidePressable}>
+          <Text style={[styles.hdrCell, styles.closeCell, { color: colors.t3 }]}>CLOSE</Text>
+          <Text style={[styles.hdrCell, styles.legCell, { color: colors.t3 }]}>LTP</Text>
+        </View>
         <View style={[styles.strikeCell, { borderColor: 'transparent' }]}>
           <Text style={[styles.hdrCell, { color: colors.blue }]}>STRIKE</Text>
         </View>
-        <Text style={[styles.hdrCell, styles.legCell, { color: colors.t3 }]}>LTP</Text>
-        <Text style={[styles.hdrCell, styles.closeCell, { color: colors.t3 }]}>CLOSE</Text>
+        <View style={styles.sidePressable}>
+          <Text style={[styles.hdrCell, styles.legCell, { color: colors.t3 }]}>LTP</Text>
+          <Text style={[styles.hdrCell, styles.closeCell, { color: colors.t3 }]}>CLOSE</Text>
+        </View>
       </View>
 
       {loading ? (
@@ -498,10 +506,12 @@ const styles = StyleSheet.create({
   hdrCell: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5, textAlign: 'center' },
 
   row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 10, minHeight: 54 },
+  // Wraps CLOSE + LTP (CE) or LTP + CLOSE (PE) into one tap area so
+  // clicking either column reveals the SELL/chart/BUY pills.
+  sidePressable: { flex: 1, flexDirection: 'row', alignItems: 'center' },
   // CLOSE columns on both ends — fixed narrow width, muted text.
   closeCell: { width: 56, textAlign: 'center', fontSize: 12, fontWeight: '500' },
-  // LTP + Δ% stack on each side of the strike. flex so they split the
-  // remaining row width evenly while CLOSE + STRIKE keep fixed widths.
+  // LTP + Δ% stack. flex so it grows to fill the remaining width.
   legCell: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   ltpCell: { fontSize: 14, fontWeight: '700' },
   pctCell: { fontSize: 11, fontWeight: '600', marginTop: 2 },
