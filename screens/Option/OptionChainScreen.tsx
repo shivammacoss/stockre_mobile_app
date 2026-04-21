@@ -176,7 +176,13 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
   const openOptionChartForSymbol = (sym?: string) => {
     if (!sym) return;
-    navigation.navigate('Chart', { symbol: sym });
+    // Chart lives inside MainTabs (bottom-tab navigator), not the RootStack.
+    // navigate('Chart', ...) directly from here fails with
+    // "not handled by any navigator" — nest it under MainTabs.
+    navigation.navigate('MainTabs', {
+      screen: 'Chart',
+      params: { symbol: sym },
+    });
   };
 
   const renderRow = ({ item, index }: { item: Strike; index: number }) => {
