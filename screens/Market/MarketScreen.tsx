@@ -516,8 +516,28 @@ const MarketScreen: React.FC = () => {
     setIsPlacingOrder(true);
     try {
       const uid = user?.oderId || user?.id || '';
-      const p = prices[orderSymbol];
-      const entryPrice = orderSide === 'buy' ? (p?.ask || 0) : (p?.bid || 0);
+      // ── Unified trade contract ──
+      // Both Web and Mobile follow the same rules:
+      //   symbol     = Zerodha tradingsymbol (server-composed, e.g. HDFCLIFE26APR530CE)
+      //   price(buy) = ask    price(sell) = bid
+      //   entry must be > 0 — no 0 / stale-price orders
+      //   source    = live WS tick when present, else the seeded price
+      //               (populated from OptionChain REST /quote for options
+      //               that aren't on the WS feed)
+      const p = prices[orderSymbol] || seedPrices[orderSymbol] || null;
+      const entryPrice = orderSide === 'buy' ? Number(p?.ask || 0) : Number(p?.bid || 0);
+
+      // Strict guard — reject before any network call if the price the
+      // user would trade at is missing/zero. Keeps behaviour identical
+      // to the web MarketPage onTrade handler.
+      if (tradingMode !== 'binary' && (!entryPrice || entryPrice <= 0)) {
+        Alert.alert(
+          'Cannot place order',
+          `${orderSymbol} has no live ${orderSide === 'buy' ? 'ask' : 'bid'} right now. Wait for the next tick and try again.`,
+        );
+        setIsPlacingOrder(false);
+        return;
+      }
 
       if (tradingMode === 'binary') {
         await tradingAPI.placeOrder({
@@ -534,6 +554,25 @@ const MarketScreen: React.FC = () => {
         const expiryLabel = binaryExpiry >= 60 ? `${Math.floor(binaryExpiry / 60)}m` : `${binaryExpiry}s`;
         Alert.alert('Success', `${binaryDirection.toUpperCase()} ₹${binaryAmount} on ${orderSymbol} - ${expiryLabel}`);
       } else {
+        // When trading an option deep-linked from OptionChainScreen the
+        // symbol isn't in the local watchlist, so activeInstrument is
+        // null and exchange/segment come through as undefined. Derive
+        // them from the tradingsymbol pattern so the server gets the
+        // same fields it would from the watchlist flow.
+        const fnoExchange = (() => {
+          if (activeInstrument?.exchange) return activeInstrument.exchange;
+          const under = (orderSymbol.match(/^[A-Z&]+/)?.[0] || '').toUpperCase();
+          if (['GOLD','GOLDM','SILVER','SILVERM','CRUDEOIL','NATURALGAS','COPPER','ZINC','ALUMINIUM','LEAD','NICKEL'].includes(under)) return 'MCX';
+          if (['SENSEX','BANKEX'].includes(under)) return 'BFO';
+          if (/^[A-Z&]+\d{2}[A-Z]{3}\d*(CE|PE|FUT)$/.test(orderSymbol)) return 'NFO';
+          return undefined;
+        })();
+        const fnoSegment = activeInstrument?.segment || activeCat || (
+          /^[A-Z&]+\d{2}[A-Z]{3}\d*(CE|PE)$/.test(orderSymbol) ? 'NSE OPT'
+          : /^[A-Z&]+\d{2}[A-Z]{3}FUT$/.test(orderSymbol) ? 'NSE FUT'
+          : undefined
+        );
+
         await tradingAPI.placeOrder({
           userId: uid,
           symbol: orderSymbol,
@@ -544,8 +583,8 @@ const MarketScreen: React.FC = () => {
           stopLoss: stopLoss ? parseFloat(stopLoss) : undefined,
           takeProfit: takeProfit ? parseFloat(takeProfit) : undefined,
           mode: tradingMode,
-          exchange: activeInstrument?.exchange,
-          segment: activeInstrument?.segment || activeCat,
+          exchange: fnoExchange,
+          segment: fnoSegment,
           lotSize: activeLotSize,
           marketData: { bid: p?.bid || 0, ask: p?.ask || 0 },
         });
