@@ -882,6 +882,46 @@ const MarketScreen: React.FC = () => {
               </View>
             </View>
 
+            {/* Pinned SELL / spread / BUY cards — stays visible no matter how far
+                the user scrolls through SL / TP / session below. Matches web
+                order panel layout the client signed off on. */}
+            <View style={[styles.pinnedSideSection, { backgroundColor: colors.bg1, borderBottomColor: colors.border }]}>
+              <View style={styles.sideRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.sideCard,
+                    { borderColor: '#ef4444', backgroundColor: orderSide === 'sell' ? '#ef4444' : 'rgba(239,68,68,0.08)' },
+                  ]}
+                  onPress={() => setOrderSide('sell')}
+                  activeOpacity={0.85}
+                >
+                  <Text style={{ color: orderSide === 'sell' ? '#fff' : '#ef4444', fontSize: 11, fontWeight: '700', letterSpacing: 0.6 }}>SELL</Text>
+                  <Text style={{ color: orderSide === 'sell' ? '#fff' : '#ef4444', fontSize: 18, fontWeight: '800', marginTop: 3 }}>
+                    {fmtP(orderSymbol, orderPrice?.bid)}
+                  </Text>
+                </TouchableOpacity>
+                <View style={[styles.spreadChip, { backgroundColor: colors.bg3, borderColor: colors.border }]}>
+                  <Text style={{ color: colors.t3, fontSize: 8, fontWeight: '700', letterSpacing: 0.4 }}>SPRD</Text>
+                  <Text style={{ color: colors.t2, fontSize: 11, fontWeight: '700' }}>
+                    {orderPrice?.bid && orderPrice?.ask ? Math.abs(orderPrice.ask - orderPrice.bid).toFixed(2) : '—'}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[
+                    styles.sideCard,
+                    { borderColor: '#22c55e', backgroundColor: orderSide === 'buy' ? '#22c55e' : 'rgba(34,197,94,0.08)' },
+                  ]}
+                  onPress={() => setOrderSide('buy')}
+                  activeOpacity={0.85}
+                >
+                  <Text style={{ color: orderSide === 'buy' ? '#fff' : '#22c55e', fontSize: 11, fontWeight: '700', letterSpacing: 0.6 }}>BUY</Text>
+                  <Text style={{ color: orderSide === 'buy' ? '#fff' : '#22c55e', fontSize: 18, fontWeight: '800', marginTop: 3 }}>
+                    {fmtP(orderSymbol, orderPrice?.ask)}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
             <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 50 }} keyboardShouldPersistTaps="handled" bounces={false} showsVerticalScrollIndicator={true}>
               {/* Trading mode tabs — only rendered when there's a real choice to make */}
               {(() => {
@@ -924,18 +964,9 @@ const MarketScreen: React.FC = () => {
                       </TouchableOpacity>
                     ))}
                   </View>
-                  {/* SELL / spread / BUY */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-                    <TouchableOpacity style={[styles.sideBtn, { backgroundColor: orderSide === 'sell' ? '#ef4444' : 'rgba(239,68,68,0.12)', borderColor: '#ef4444' }]} onPress={() => setOrderSide('sell')}>
-                      <Text style={{ color: orderSide === 'sell' ? '#fff' : '#ef4444', fontSize: 11, fontWeight: '600' }}>SELL</Text>
-                      <Text style={{ color: orderSide === 'sell' ? '#fff' : '#ef4444', fontSize: 16, fontWeight: '700' }}>{fmtP(orderSymbol, orderPrice?.bid)}</Text>
-                    </TouchableOpacity>
-                    <Text style={{ color: colors.t3, fontSize: 11 }}>{orderPrice?.bid && orderPrice?.ask ? Math.abs(orderPrice.ask - orderPrice.bid).toFixed(2) : '0.00'}</Text>
-                    <TouchableOpacity style={[styles.sideBtn, { backgroundColor: orderSide === 'buy' ? '#22c55e' : 'rgba(34,197,94,0.12)', borderColor: '#22c55e' }]} onPress={() => setOrderSide('buy')}>
-                      <Text style={{ color: orderSide === 'buy' ? '#fff' : '#22c55e', fontSize: 11, fontWeight: '600' }}>BUY</Text>
-                      <Text style={{ color: orderSide === 'buy' ? '#fff' : '#22c55e', fontSize: 16, fontWeight: '700' }}>{fmtP(orderSymbol, orderPrice?.ask)}</Text>
-                    </TouchableOpacity>
-                  </View>
+                  {/* SELL / BUY rendered as pinned section above the ScrollView
+                      (see styles.pinnedSideSection). Keeps prices + side buttons
+                      always visible while user scrolls through SL/TP. */}
                   {/* Option Trade shortcut — opens the Option Chain for this
                       instrument's underlying. Always visible so the entry
                       point is consistent across the app; the Option Chain
@@ -1009,41 +1040,9 @@ const MarketScreen: React.FC = () => {
                       </TouchableOpacity>
                     ))}
                   </View>
-                  {/* SELL / BUY cards with spread pill between */}
-                  <View style={styles.sideRow}>
-                    <TouchableOpacity
-                      style={[
-                        styles.sideCard,
-                        { borderColor: '#ef4444', backgroundColor: orderSide === 'sell' ? '#ef4444' : 'rgba(239,68,68,0.08)' },
-                      ]}
-                      onPress={() => setOrderSide('sell')}
-                      activeOpacity={0.85}
-                    >
-                      <Text style={{ color: orderSide === 'sell' ? '#fff' : '#ef4444', fontSize: 11, fontWeight: '700', letterSpacing: 0.6 }}>SELL</Text>
-                      <Text style={{ color: orderSide === 'sell' ? '#fff' : '#ef4444', fontSize: 18, fontWeight: '800', marginTop: 3 }}>
-                        {fmtP(orderSymbol, orderPrice?.bid)}
-                      </Text>
-                    </TouchableOpacity>
-                    <View style={[styles.spreadChip, { backgroundColor: colors.bg3, borderColor: colors.border }]}>
-                      <Text style={{ color: colors.t3, fontSize: 8, fontWeight: '700', letterSpacing: 0.4 }}>SPRD</Text>
-                      <Text style={{ color: colors.t2, fontSize: 11, fontWeight: '700' }}>
-                        {orderPrice?.bid && orderPrice?.ask ? Math.abs(orderPrice.ask - orderPrice.bid).toFixed(2) : '—'}
-                      </Text>
-                    </View>
-                    <TouchableOpacity
-                      style={[
-                        styles.sideCard,
-                        { borderColor: '#22c55e', backgroundColor: orderSide === 'buy' ? '#22c55e' : 'rgba(34,197,94,0.08)' },
-                      ]}
-                      onPress={() => setOrderSide('buy')}
-                      activeOpacity={0.85}
-                    >
-                      <Text style={{ color: orderSide === 'buy' ? '#fff' : '#22c55e', fontSize: 11, fontWeight: '700', letterSpacing: 0.6 }}>BUY</Text>
-                      <Text style={{ color: orderSide === 'buy' ? '#fff' : '#22c55e', fontSize: 18, fontWeight: '800', marginTop: 3 }}>
-                        {fmtP(orderSymbol, orderPrice?.ask)}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
+                  {/* SELL / BUY cards rendered as pinned section above the
+                      ScrollView (see styles.pinnedSideSection) so they stay
+                      visible while user scrolls through SL/TP/session. */}
                   {/* Option Trade shortcut — opens the Option Chain for this
                       instrument's underlying. Indian symbols only. */}
                   {isOrderIndian && (
@@ -1293,6 +1292,7 @@ const styles = StyleSheet.create({
   marginRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 },
   marginDivider: { height: 1, marginVertical: 6 },
   sheetSymbolHeader: { paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 1 },
+  pinnedSideSection: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4, borderBottomWidth: 1 },
   optionTradeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
