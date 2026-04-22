@@ -86,17 +86,9 @@ const OrdersScreen: React.FC = () => {
   // Footer / ledger balance. Read from `wallet` (the trading engine's source of
   // truth). The response also ships a legacy `walletINR` object — don't use it:
   // trading never writes to it, so P&L would never reflect on this screen.
+  // Refresh happens inside loadData(), which is triggered by every socket
+  // position update — so closing a trade updates the ledger in the same tick.
   const [wallet, setWallet] = useState<{ balance: number }>({ balance: 0 });
-
-  useEffect(() => {
-    const uid = user?.oderId || user?.id;
-    if (!uid) return;
-    walletAPI.getUserWallet(uid)
-      .then(res => {
-        if (res.data?.wallet) setWallet(res.data.wallet);
-      })
-      .catch(() => {});
-  }, [user?.id, user?.oderId]);
 
   // INR-only P/L formatter. Server stores Indian profits in INR,
   // international in USD — display shows INR for all.
@@ -124,14 +116,16 @@ const OrdersScreen: React.FC = () => {
     if (!user?.id && !user?.oderId) return;
     const uid = user?.oderId || user?.id;
     try {
-      const [posRes, pendRes, histRes] = await Promise.all([
+      const [posRes, pendRes, histRes, walRes] = await Promise.all([
         tradingAPI.getAllPositions(uid),
         tradingAPI.getPendingOrders(uid),
         tradingAPI.getTradeHistory(uid),
+        walletAPI.getUserWallet(uid),
       ]);
       if (posRes.data?.positions) setPositions(posRes.data.positions);
       if (pendRes.data?.orders) setPendingOrders(pendRes.data.orders);
       if (histRes.data?.trades) setHistory(histRes.data.trades);
+      if (walRes.data?.wallet) setWallet(walRes.data.wallet);
     } catch (_) {}
   };
 
