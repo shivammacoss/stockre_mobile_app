@@ -83,15 +83,17 @@ const OrdersScreen: React.FC = () => {
   const [legEditTP, setLegEditTP] = useState('');
   const [legEditLoading, setLegEditLoading] = useState(false);
 
-  // Footer balance
-  const [walletINR, setWalletINR] = useState<{ balance: number }>({ balance: 0 });
+  // Footer / ledger balance. Read from `wallet` (the trading engine's source of
+  // truth). The response also ships a legacy `walletINR` object — don't use it:
+  // trading never writes to it, so P&L would never reflect on this screen.
+  const [wallet, setWallet] = useState<{ balance: number }>({ balance: 0 });
 
   useEffect(() => {
     const uid = user?.oderId || user?.id;
     if (!uid) return;
     walletAPI.getUserWallet(uid)
       .then(res => {
-        if (res.data?.walletINR) setWalletINR(res.data.walletINR);
+        if (res.data?.wallet) setWallet(res.data.wallet);
       })
       .catch(() => {});
   }, [user?.id, user?.oderId]);
@@ -336,7 +338,7 @@ const OrdersScreen: React.FC = () => {
   }, 0);
   const totalPnl = totalPnlInr;
   const marginUsed = positions.reduce((s, p) => s + Number(p.marginUsed || p.margin || 0), 0);
-  const ledgerBalance = Number(walletINR?.balance || 0);
+  const ledgerBalance = Number(wallet?.balance || 0);
   // Available = deposited funds minus margin locked in open trades, plus live M2M.
   // All three are in INR here.
   const marginAvailable = ledgerBalance - marginUsed + totalPnlInr;
@@ -523,7 +525,7 @@ const OrdersScreen: React.FC = () => {
       {/* ── Mobile Status Footer (INR only) ── */}
       <MobileStatusFooter
         symbol={positions[0]?.symbol}
-        balanceInr={walletINR.balance}
+        balanceInr={wallet.balance}
       />
 
       {/* ── Edit SL/TP Modal ── */}
