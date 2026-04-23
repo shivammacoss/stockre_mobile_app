@@ -73,6 +73,50 @@ const DEFAULT_WATCHLIST = ['XAUUSD', 'EURUSD', 'GBPUSD', 'USDJPY', 'BTCUSD', 'US
 // Indian F&O segments — these have expiry dates and need filtering
 const FNO_CATEGORIES_FOR_EXPIRY = new Set(['NSE FUT', 'NSE OPT', 'MCX FUT', 'MCX OPT', 'BSE FUT', 'BSE OPT']);
 
+// Indian exchange codes used on Zerodha instrument payloads.
+const INDIAN_EXCHANGES = new Set(['NSE', 'BSE', 'NFO', 'BFO', 'MCX', 'CDS']);
+
+// Known Indian index underlyings. Used for ₹ / $ detection when the symbol
+// isn't a registered instrument (e.g. user lands on NIFTY from a deep link
+// before the NSE EQ segment has been loaded).
+const INDIAN_INDEX_NAMES = [
+  'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'NIFTYNXT50',
+  'SENSEX', 'BANKEX',
+];
+
+/**
+ * Return true if this symbol/instrument trades in ₹ (NSE/BSE/MCX/F&O).
+ * Accepts an optional `inst` — when available we use its exchange / segment
+ * / token metadata (most reliable). Falls back to well-known symbol
+ * patterns so cash stocks (SBIN, RELIANCE), index symbols (NIFTY), and
+ * F&O contracts (monthly + weekly expiries) still get ₹ formatting even
+ * before the category list has been fetched.
+ */
+function looksIndian(sym: string, inst?: any): boolean {
+  if (!sym) return false;
+  if (inst) {
+    const ex = String(inst.exchange || '').toUpperCase();
+    if (INDIAN_EXCHANGES.has(ex)) return true;
+    const seg = String(inst.segment || '').toLowerCase();
+    if (seg.startsWith('nse') || seg.startsWith('bse') || seg.startsWith('mcx') || seg.startsWith('nfo') || seg.startsWith('bfo')) return true;
+    const cat = String(inst.category || '').toLowerCase();
+    if (cat.startsWith('nse_') || cat.startsWith('bse_') || cat.startsWith('mcx_')) return true;
+    // Every Zerodha instrument carries a numeric token; Delta / Infoway don't.
+    if (inst.token) return true;
+    if (String(inst.source || '').toLowerCase() === 'zerodha' || String(inst.source || '').toLowerCase() === 'truedata') return true;
+  }
+  const s = sym.toUpperCase();
+  // Indian F&O contracts. Two accepted endings:
+  //   options → digit + CE/PE   (strike price ends the symbol)
+  //   futures → literal FUT     (no strike; just YYMON prefix)
+  // Covers monthly (SBIN25APR1050CE, GOLDM26MAYFUT) and weekly
+  // (NIFTY24D0524000CE) Kite tradingsymbol formats.
+  if (/^[A-Z&]{2,}\d+.*(?:\d(?:CE|PE)|FUT)$/.test(s)) return true;
+  // Underlying index names.
+  if (INDIAN_INDEX_NAMES.some((n) => s === n || s.startsWith(n))) return true;
+  return false;
+}
+
 // Map segment tab key → Zerodha segment code (matches web)
 const ZERODHA_SEGMENT_MAP: Record<string, string> = {
   'NSE EQ': 'nseEq', 'NSE FUT': 'nseFut', 'NSE OPT': 'nseOpt',
@@ -353,23 +397,28 @@ const MarketScreen: React.FC = () => {
     };
   };
 
-  // Check if a symbol belongs to an Indian segment (has ₹ pricing)
-  const isIndianSymbol = useCallback((sym: string): boolean => {
+  // Check if a symbol belongs to an Indian segment (has ₹ pricing).
+  // Accepts an optional inst — when present we inspect exchange / segment
+  // / token metadata (authoritative). Otherwise we fall back to looking
+  // the symbol up in the already-loaded category lists, search results,
+  // and a pattern-based check (covers cash stocks, indices, and F&O
+  // contracts in both monthly and weekly formats).
+  const isIndianSymbol = useCallback((sym: string, inst?: any): boolean => {
+    if (!sym) return false;
+    if (looksIndian(sym, inst)) return true;
     for (const cat of Object.keys(ZERODHA_SEGMENT_MAP)) {
-      if (instrumentsByCategory[cat]?.some((i: any) => i.symbol === sym)) return true;
+      const found = instrumentsByCategory[cat]?.find((i: any) => i.symbol === sym);
+      if (found) return true;
     }
-    // Also check search results
-    if (isIndianSegment && indianResults.some((i: any) => i.symbol === sym)) return true;
-    // Option-contract tradingsymbol pattern: e.g. HDFCLIFE26APR480CE,
-    // NIFTY25APR23000PE. These are deep-linked from OptionChainScreen
-    // and aren't in instrumentsByCategory, so the normal check misses.
-    if (/^[A-Z]+\d{2}[A-Z]{3}\d+(CE|PE|FUT)$/.test(sym)) return true;
+    if (indianResults.some((i: any) => i.symbol === sym)) return true;
+    // Current tab is an Indian segment — anything we render there is ₹.
+    if (isIndianSegment) return true;
     return false;
   }, [instrumentsByCategory, isIndianSegment, indianResults]);
 
-  const fmtP = (sym: string, val?: number) => {
+  const fmtP = (sym: string, val?: number, inst?: any) => {
     if (!val || val === 0) return '---';
-    if (isIndianSymbol(sym)) {
+    if (isIndianSymbol(sym, inst)) {
       return `₹${val.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }
     if (sym.includes('JPY') || sym.includes('XAU') || sym.includes('XAG') || sym.includes('BTC') ||
@@ -615,7 +664,7 @@ const MarketScreen: React.FC = () => {
   }, [orderSymbol, instrumentsByCategory, indianResults]);
 
   const activeLotSize = Number(activeInstrument?.lotSize) || 1;
-  const isOrderIndian = isIndianSymbol(orderSymbol);
+  const isOrderIndian = isIndianSymbol(orderSymbol, activeInstrument);
   // Stepper increment + floor for the lot input, per market type.
   const lotStep = isOrderIndian ? 1 : 0.01;
   const minLot = isOrderIndian ? 1 : 0.01;
@@ -660,13 +709,13 @@ const MarketScreen: React.FC = () => {
           {!showAddButton && (
             <View style={{ alignItems: 'flex-end', marginRight: 10 }}>
               <Text style={{ color: colors.red, fontSize: 14, fontWeight: '600' }}>
-                {fmtP(sym, bid)}
+                {fmtP(sym, bid, inst)}
               </Text>
               <Text style={{ color: colors.t3, fontSize: 10 }}>
-                {spread > 0 ? spread.toFixed(isIndianSymbol(sym) ? 2 : sym.includes('JPY') || sym.includes('XAU') || sym.includes('BTC') ? 2 : 4) : '0.00'}
+                {spread > 0 ? spread.toFixed(isIndianSymbol(sym, inst) ? 2 : sym.includes('JPY') || sym.includes('XAU') || sym.includes('BTC') ? 2 : 4) : '0.00'}
               </Text>
               <Text style={{ color: colors.green, fontSize: 14, fontWeight: '600' }}>
-                {fmtP(sym, ask)}
+                {fmtP(sym, ask, inst)}
               </Text>
             </View>
           )}
@@ -867,17 +916,17 @@ const MarketScreen: React.FC = () => {
               <View style={styles.ohlcRow}>
                 <View style={styles.ohlcCell}>
                   <Text style={[styles.ohlcLabel, { color: colors.t3 }]}>LTP</Text>
-                  <Text style={[styles.ohlcValue, { color: colors.t1 }]}>{fmtP(orderSymbol, orderPrice?.lastPrice)}</Text>
+                  <Text style={[styles.ohlcValue, { color: colors.t1 }]}>{fmtP(orderSymbol, orderPrice?.lastPrice, activeInstrument)}</Text>
                 </View>
                 <View style={[styles.ohlcDivider, { backgroundColor: colors.border }]} />
                 <View style={styles.ohlcCell}>
                   <Text style={[styles.ohlcLabel, { color: colors.t3 }]}>DAY HIGH</Text>
-                  <Text style={[styles.ohlcValue, { color: '#22c55e' }]}>{fmtP(orderSymbol, orderPrice?.high)}</Text>
+                  <Text style={[styles.ohlcValue, { color: '#22c55e' }]}>{fmtP(orderSymbol, orderPrice?.high, activeInstrument)}</Text>
                 </View>
                 <View style={[styles.ohlcDivider, { backgroundColor: colors.border }]} />
                 <View style={styles.ohlcCell}>
                   <Text style={[styles.ohlcLabel, { color: colors.t3 }]}>DAY LOW</Text>
-                  <Text style={[styles.ohlcValue, { color: '#ef4444' }]}>{fmtP(orderSymbol, orderPrice?.low)}</Text>
+                  <Text style={[styles.ohlcValue, { color: '#ef4444' }]}>{fmtP(orderSymbol, orderPrice?.low, activeInstrument)}</Text>
                 </View>
               </View>
             </View>
@@ -897,7 +946,7 @@ const MarketScreen: React.FC = () => {
                 >
                   <Text style={{ color: orderSide === 'sell' ? '#fff' : '#ef4444', fontSize: 11, fontWeight: '700', letterSpacing: 0.6 }}>SELL</Text>
                   <Text style={{ color: orderSide === 'sell' ? '#fff' : '#ef4444', fontSize: 18, fontWeight: '800', marginTop: 3 }}>
-                    {fmtP(orderSymbol, orderPrice?.bid)}
+                    {fmtP(orderSymbol, orderPrice?.bid, activeInstrument)}
                   </Text>
                 </TouchableOpacity>
                 <View style={[styles.spreadChip, { backgroundColor: colors.bg3, borderColor: colors.border }]}>
@@ -916,7 +965,7 @@ const MarketScreen: React.FC = () => {
                 >
                   <Text style={{ color: orderSide === 'buy' ? '#fff' : '#22c55e', fontSize: 11, fontWeight: '700', letterSpacing: 0.6 }}>BUY</Text>
                   <Text style={{ color: orderSide === 'buy' ? '#fff' : '#22c55e', fontSize: 18, fontWeight: '800', marginTop: 3 }}>
-                    {fmtP(orderSymbol, orderPrice?.ask)}
+                    {fmtP(orderSymbol, orderPrice?.ask, activeInstrument)}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -1024,7 +1073,7 @@ const MarketScreen: React.FC = () => {
                     )}
                   </TouchableOpacity>
                   <Text style={{ color: colors.t3, fontSize: 10, textAlign: 'center', marginTop: 6 }}>
-                    {(parseFloat(volume) || 0).toFixed(isOrderIndian ? 0 : 2)} lots @ {fmtP(orderSymbol, orderSide === 'buy' ? orderPrice?.ask : orderPrice?.bid)}
+                    {(parseFloat(volume) || 0).toFixed(isOrderIndian ? 0 : 2)} lots @ {fmtP(orderSymbol, orderSide === 'buy' ? orderPrice?.ask : orderPrice?.bid, activeInstrument)}
                   </Text>
                 </>
               )}
@@ -1149,7 +1198,7 @@ const MarketScreen: React.FC = () => {
                     )}
                   </TouchableOpacity>
                   <Text style={{ color: colors.t3, fontSize: 10, textAlign: 'center', marginTop: 6 }}>
-                    {(parseFloat(volume) || 0).toFixed(isOrderIndian ? 0 : 2)} lots @ {fmtP(orderSymbol, orderSide === 'buy' ? orderPrice?.ask : orderPrice?.bid)} (intraday)
+                    {(parseFloat(volume) || 0).toFixed(isOrderIndian ? 0 : 2)} lots @ {fmtP(orderSymbol, orderSide === 'buy' ? orderPrice?.ask : orderPrice?.bid, activeInstrument)} (intraday)
                   </Text>
                 </>
               )}
@@ -1160,7 +1209,7 @@ const MarketScreen: React.FC = () => {
                   {/* Current price display */}
                   <View style={{ backgroundColor: colors.bg3, borderRadius: 12, padding: 16, alignItems: 'center', marginBottom: 16 }}>
                     <Text style={{ color: colors.t2, fontSize: 12, marginBottom: 4 }}>Current Price</Text>
-                    <Text style={{ color: colors.t1, fontSize: 28, fontWeight: '800' }}>{fmtP(orderSymbol, orderPrice?.bid)}</Text>
+                    <Text style={{ color: colors.t1, fontSize: 28, fontWeight: '800' }}>{fmtP(orderSymbol, orderPrice?.bid, activeInstrument)}</Text>
                   </View>
                   {/* UP / DOWN buttons */}
                   <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>

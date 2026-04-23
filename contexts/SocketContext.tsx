@@ -6,6 +6,7 @@ interface SocketContextType {
   isConnected: boolean;
   prices: Record<string, any>;
   getPrice: (symbol: string) => any | null;
+  mergePrice: (symbol: string, partial: { bid?: number; ask?: number; lastPrice?: number; last?: number }) => void;
   onPositionUpdate: (callback: (data: any) => void) => () => void;
 }
 
@@ -55,6 +56,33 @@ export const SocketProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     return prices[symbol] || socketService.getPrice(symbol);
   }, [prices]);
 
+  // Merge an external partial price into the live-prices store.
+  // OptionChainScreen uses this to inject fresh bid/ask/ltp from its REST
+  // /quote response so the chart + order sheet have a real price to read
+  // immediately — option contracts aren't on the Kite WS feed until the
+  // server subscribes them on demand, and that takes 300-800ms. Real WS
+  // ticks still overwrite when they arrive.
+  const mergePrice = useCallback(
+    (symbol: string, partial: { bid?: number; ask?: number; lastPrice?: number; last?: number }) => {
+      if (!symbol || !partial) return;
+      setPrices((prev) => {
+        const next = {
+          ...prev,
+          [symbol]: {
+            ...(prev[symbol] || {}),
+            ...partial,
+            lastUpdated: Date.now(),
+          },
+        };
+        // Keep the module-level cache in sync so getPrice() (which falls
+        // back to socketService.getPrice) sees the seed between renders.
+        latestPricesRef.current = next;
+        return next;
+      });
+    },
+    []
+  );
+
   const onPositionUpdate = useCallback((callback: (data: any) => void) => {
     return socketService.onPositionUpdate(callback);
   }, []);
@@ -65,6 +93,7 @@ export const SocketProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         isConnected,
         prices,
         getPrice,
+        mergePrice,
         onPositionUpdate,
       }}
     >

@@ -49,7 +49,7 @@ const fmtPrice = (v: any) => {
 
 const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigation, route }) => {
   const { colors } = useTheme();
-  const { prices } = useSocket();
+  const { prices, mergePrice } = useSocket();
 
   // Allow other screens (e.g. MarketScreen's order sheet) to pre-select an
   // underlying: navigation.navigate('OptionChain', { segment, underlying }).
@@ -66,6 +66,14 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
   const [showUnderlyingPicker, setShowUnderlyingPicker] = useState(false);
   const [showExpiryPicker, setShowExpiryPicker] = useState(false);
+  // How many strikes around ATM to show. Matches the web's "N Strikes"
+  // dropdown; previously mobile always rendered the full chain which (a)
+  // made far-OTM strikes dominate the view and (b) was the user-visible
+  // reason "the strike I want isn't showing" — it was simply below the
+  // ATM-centered viewport without a way to expand the window.
+  const [strikeCount, setStrikeCount] = useState(18);
+  const [showStrikeCountPicker, setShowStrikeCountPicker] = useState(false);
+  const STRIKE_COUNT_OPTIONS = [10, 14, 18, 24, 30, 40, 60, 999];
 
   const listRef = useRef<FlatList<Strike>>(null);
   const didAutoScrollRef = useRef(false);
@@ -122,19 +130,34 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     return bestIdx;
   }, [spot, strikes]);
 
+  // Slice of strikes actually shown — N strikes centered on ATM. `999`
+  // means "show everything" (no ATM centering needed). The ATM highlight
+  // still uses the global atmIndex but we map it into the visible slice
+  // for auto-scroll below.
+  const { visibleStrikes, visibleAtmIndex } = useMemo(() => {
+    if (!strikes.length) return { visibleStrikes: [] as Strike[], visibleAtmIndex: -1 };
+    if (strikeCount >= strikes.length || atmIndex < 0) {
+      return { visibleStrikes: strikes, visibleAtmIndex: atmIndex };
+    }
+    const half = Math.floor(strikeCount / 2);
+    const start = Math.max(0, Math.min(strikes.length - strikeCount, atmIndex - half));
+    const end = Math.min(strikes.length, start + strikeCount);
+    return { visibleStrikes: strikes.slice(start, end), visibleAtmIndex: atmIndex - start };
+  }, [strikes, atmIndex, strikeCount]);
+
   // Auto-scroll once after first load so ATM lands near the middle.
   useEffect(() => {
     if (didAutoScrollRef.current) return;
-    if (atmIndex < 0 || !strikes.length) return;
+    if (visibleAtmIndex < 0 || !visibleStrikes.length) return;
     didAutoScrollRef.current = true;
     // Slight delay for FlatList to measure.
     const t = setTimeout(() => {
       try {
-        listRef.current?.scrollToIndex({ index: atmIndex, animated: false, viewPosition: 0.5 });
+        listRef.current?.scrollToIndex({ index: visibleAtmIndex, animated: false, viewPosition: 0.5 });
       } catch {}
     }, 120);
     return () => clearTimeout(t);
-  }, [atmIndex, strikes.length]);
+  }, [visibleAtmIndex, visibleStrikes.length]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -196,8 +219,29 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     });
   };
 
-  const openOptionChartForSymbol = (sym?: string) => {
+  const openOptionChartForSymbol = (
+    sym?: string,
+    ctx: { bid?: number; ask?: number; ltp?: number } | null = null
+  ) => {
     if (!sym) return;
+    // Seed the price store from the chain's REST /quote snapshot BEFORE
+    // navigating. Option symbols aren't on the Kite WS feed until the
+    // server subscribes them on demand (~300-800ms), so without this seed
+    // ChartScreen would show 0 in its OHLC header and the LTP line would
+    // be absent for the first couple of seconds.
+    if (ctx) {
+      const bid = Number(ctx.bid || 0);
+      const ask = Number(ctx.ask || 0);
+      const ltp = Number(ctx.ltp || 0);
+      if ((bid > 0 || ask > 0 || ltp > 0) && typeof mergePrice === 'function') {
+        mergePrice(sym, { bid, ask, lastPrice: ltp });
+      }
+    }
+    // Kick off an on-demand subscribe so the broker starts streaming real
+    // WS ticks for this contract. Fire-and-forget — the chart is usable
+    // from the seeded price while this round-trips. Same endpoint the
+    // web client hits from MarketPage's subscribe-by-symbol effect.
+    instrumentsAPI.subscribeZerodhaInstrumentBySymbol(sym).catch(() => { /* no-op */ });
     // Chart lives inside MainTabs (bottom-tab navigator), not the RootStack.
     // navigate('Chart', ...) directly from here fails with
     // "not handled by any navigator" — nest it under MainTabs.
@@ -208,7 +252,7 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
   };
 
   const renderRow = ({ item, index }: { item: Strike; index: number }) => {
-    const isAtm = index === atmIndex;
+    const isAtm = index === visibleAtmIndex;
     // Live overlay — snapshot LTP + live socket tick if present.
     const ceSym = item.ce?.symbol;
     const peSym = item.pe?.symbol;
@@ -253,7 +297,7 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
               >
                 <Text style={styles.pillTxt}>SELL</Text>
               </Pressable>
-              <Pressable onPress={() => { openOptionChartForSymbol(ceSym); setActiveLeg(null); }} style={[styles.pillIcon, { backgroundColor: colors.blue }]} hitSlop={6}>
+              <Pressable onPress={() => { openOptionChartForSymbol(ceSym, { bid: item.ce?.bid, ask: item.ce?.ask, ltp: item.ce?.ltp }); setActiveLeg(null); }} style={[styles.pillIcon, { backgroundColor: colors.blue }]} hitSlop={6}>
                 <Ionicons name="stats-chart" size={13} color="#fff" />
               </Pressable>
               <Pressable
@@ -305,7 +349,7 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
               >
                 <Text style={styles.pillTxt}>SELL</Text>
               </Pressable>
-              <Pressable onPress={() => { openOptionChartForSymbol(peSym); setActiveLeg(null); }} style={[styles.pillIcon, { backgroundColor: colors.blue }]} hitSlop={6}>
+              <Pressable onPress={() => { openOptionChartForSymbol(peSym, { bid: item.pe?.bid, ask: item.pe?.ask, ltp: item.pe?.ltp }); setActiveLeg(null); }} style={[styles.pillIcon, { backgroundColor: colors.blue }]} hitSlop={6}>
                 <Ionicons name="stats-chart" size={13} color="#fff" />
               </Pressable>
               <Pressable
@@ -363,7 +407,7 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           onSegmentChange around in case the underlying picker needs it
           later (e.g. switching NIFTY -> SENSEX auto-flips NSE -> BSE). */}
 
-      {/* Underlying + expiry selectors */}
+      {/* Underlying + expiry + strike-count selectors */}
       <View style={styles.selectorRow}>
         <TouchableOpacity
           style={[styles.selector, { backgroundColor: colors.bg2, borderColor: colors.border }]}
@@ -384,6 +428,19 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           <View style={styles.selectorValueRow}>
             <Text style={{ color: colors.t1, fontSize: 14, fontWeight: '700' }}>
               {expiry || '—'}
+            </Text>
+            <Ionicons name="chevron-down" size={14} color={colors.t3} />
+          </View>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.selector, { backgroundColor: colors.bg2, borderColor: colors.border, flex: 0.7 }]}
+          onPress={() => { didAutoScrollRef.current = false; setShowStrikeCountPicker(true); }}
+          disabled={!strikes.length}
+        >
+          <Text style={[styles.selectorLabel, { color: colors.t3 }]}>STRIKES</Text>
+          <View style={styles.selectorValueRow}>
+            <Text style={{ color: colors.t1, fontSize: 14, fontWeight: '700' }}>
+              {strikeCount >= 999 ? 'All' : strikeCount}
             </Text>
             <Ionicons name="chevron-down" size={14} color={colors.t3} />
           </View>
@@ -428,7 +485,7 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
       ) : (
         <FlatList
           ref={listRef}
-          data={strikes}
+          data={visibleStrikes}
           keyExtractor={(s) => String(s.strike)}
           renderItem={renderRow}
           contentContainerStyle={{ paddingBottom: 40 }}
@@ -473,6 +530,27 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
               >
                 <Text style={{ color: colors.t1, fontSize: 15, fontWeight: expiry === e ? '800' : '500' }}>{e}</Text>
                 {expiry === e && <Ionicons name="checkmark" size={18} color={colors.blue} />}
+              </TouchableOpacity>
+            ))}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Strike count picker */}
+      <Modal visible={showStrikeCountPicker} transparent animationType="fade" onRequestClose={() => setShowStrikeCountPicker(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setShowStrikeCountPicker(false)}>
+          <Pressable style={[styles.modalCard, { backgroundColor: colors.bg1, borderColor: colors.border }]} onPress={() => {}}>
+            <Text style={[styles.modalTitle, { color: colors.t1 }]}>Strikes around ATM</Text>
+            {STRIKE_COUNT_OPTIONS.map((n) => (
+              <TouchableOpacity
+                key={n}
+                style={styles.modalRow}
+                onPress={() => { setStrikeCount(n); didAutoScrollRef.current = false; setShowStrikeCountPicker(false); }}
+              >
+                <Text style={{ color: colors.t1, fontSize: 15, fontWeight: strikeCount === n ? '800' : '500' }}>
+                  {n >= 999 ? 'All strikes' : `${n} strikes`}
+                </Text>
+                {strikeCount === n && <Ionicons name="checkmark" size={18} color={colors.blue} />}
               </TouchableOpacity>
             ))}
           </Pressable>

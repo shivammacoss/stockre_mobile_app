@@ -20,11 +20,15 @@ const SH = Dimensions.get('window').height;
 // Data source detection for historical candle API routing
 function getDataSource(symbol: string): string {
   const s = (symbol || '').toUpperCase();
-  // Indian F&O tradingsymbol pattern: e.g. HDFCLIFE26APR525CE,
-  // NIFTY25APR23000PE, GOLDM26MAYFUT. Must come before the generic
+  // Indian F&O tradingsymbol patterns. Must come before the generic
   // keyword check so deep-linked options from OptionChain route to
   // Zerodha (they aren't on MetaAPI / Delta).
+  //   Monthly: HDFCLIFE26APR525CE, NIFTY25APR23000PE, GOLDM26MAYFUT
+  //   Weekly : NIFTY24D0524000CE (year 24, month-letter D, day 05, strike 24000)
+  // The permissive form covers both: letters prefix, digits, anything,
+  // a digit, then CE/PE/FUT suffix.
   if (/^[A-Z&]+\d{2}[A-Z]{3}\d*(CE|PE|FUT)$/.test(s)) return 'zerodha';
+  if (/^[A-Z&]{2,}\d+.*\d(CE|PE)$/.test(s)) return 'zerodha';
   // Indian instruments (index / watchlist shortcuts)
   if (s.includes('NIFTY') || s.includes('BANKNIFTY') || s.includes('SENSEX') || s.endsWith('.NS') || s.endsWith('.BO') || s.includes('SBIN')) return 'zerodha';
   // Crypto
@@ -51,8 +55,29 @@ html.light,body.light{background:#ffffff}
 #loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-family:system-ui;font-size:13px;background:#000}
 body.light #loading{background:#ffffff;color:#4a587a}
 </style>
+<script>
+// Forward uncaught JS errors + unhandled promise rejections to RN so a
+// broken chart surfaces as a real message in the Metro console instead
+// of a generic "didn't respond within 20s" timeout overlay.
+window.addEventListener('error', function(e){
+  try{
+    window.ReactNativeWebView.postMessage(JSON.stringify({
+      type:'consoleError',
+      message:(e && e.message) || 'error',
+      src:(e && e.filename) || '',
+      line:(e && e.lineno) || 0,
+    }));
+  }catch(_){}
+});
+window.addEventListener('unhandledrejection', function(e){
+  try{
+    var r = e && (e.reason && (e.reason.message || String(e.reason))) || 'rejection';
+    window.ReactNativeWebView.postMessage(JSON.stringify({type:'consoleError',message:r}));
+  }catch(_){}
+});
+</script>
 <script src="${libUrl}/charting_library/charting_library.standalone.js"
-  onerror="try{window.ReactNativeWebView.postMessage(JSON.stringify({type:'chartLibFailed'}));}catch(e){}"></script>
+  onerror="try{window.ReactNativeWebView.postMessage(JSON.stringify({type:'chartLibFailed',src:'${libUrl}/charting_library/charting_library.standalone.js'}));}catch(e){}"></script>
 </head>
 <body>
 <div id="loading">Loading chart…</div>
@@ -495,7 +520,12 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
         setChartReady(true);
         setChartError('');
       } else if (data.type === 'chartLibFailed') {
-        setChartError('Chart library failed to load. Check network or CHART_LIB_URL.');
+        setChartError(`Chart library failed to load from ${data.src || 'CHART_LIB_URL'}. Check the phone can reach that URL.`);
+      } else if (data.type === 'consoleError') {
+        // Bubble up to Metro. These were invisible before — a broken chart
+        // silently hit the 20s timeout without any clue in logs.
+        // eslint-disable-next-line no-console
+        console.warn('[Chart WebView]', data.message, data.src ? `(${data.src}:${data.line || 0})` : '');
       }
     } catch (_) {}
   };
@@ -587,6 +617,19 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
 
   const fmtP = (sym: string, val?: number) => {
     if (!val || val === 0) return '---';
+    // Indian instruments render in ₹. Detection mirrors the helper in
+    // MarketScreen: F&O tradingsymbol patterns (monthly + weekly options
+    // and futures) and known index underlyings. Without this branch,
+    // clicking an option from the chain landed on the chart with "$222.20"
+    // headers even though the underlying + premium are INR-quoted.
+    const s = sym.toUpperCase();
+    const INDIAN_INDEX_NAMES = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'NIFTYNXT50', 'SENSEX', 'BANKEX'];
+    const isIndian =
+      /^[A-Z&]{2,}\d+.*(?:\d(?:CE|PE)|FUT)$/.test(s) ||
+      INDIAN_INDEX_NAMES.some((n) => s === n || s.startsWith(n));
+    if (isIndian) {
+      return `₹${val.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
     if (sym.includes('JPY') || sym.includes('XAU') || sym.includes('XAG') || sym.includes('BTC') ||
         sym.includes('ETH') || sym.includes('US3') || sym.includes('US5') || sym.includes('UK1') ||
         sym.includes('OIL')) {
@@ -648,13 +691,33 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
       <View style={{ flex: 1 }}>
         <WebView
           ref={webViewRef}
-          source={{ html: chartHTML, baseUrl: CHART_LIB_URL }}
+          // baseUrl is the document origin inside the WebView. We intentionally
+          // use API_URL (not CHART_LIB_URL): all data-fetches target API_URL
+          // (historical candles, live ticks), so making that same-origin with
+          // the document avoids mixed-content blocks when API_URL is http://
+          // (e.g. local-dev on a phone talking to the Mac's LAN IP) while
+          // CHART_LIB_URL is served same-origin from the backend too.
+          source={{ html: chartHTML, baseUrl: API_URL }}
           style={{ flex: 1, backgroundColor: isDark ? '#000' : '#fff' }}
           javaScriptEnabled
           domStorageEnabled
-          originWhitelist={['https://*', 'http://*']}
+          // '*' must include `blob:` — TradingView spawns Web Workers from
+          // `URL.createObjectURL(new Blob([...]))`. Without blob: in the
+          // whitelist, RN intercepts the worker's URL and hands it to the
+          // native Linking handler, which can't open a blob: and logs
+          // "Can't open url: blob:...". The worker never spawns, the chart
+          // stalls, and our 20-second fallback fires with "library may be
+          // unreachable" — masking the real cause.
+          originWhitelist={['*']}
           mixedContentMode="always"
           allowsInlineMediaPlayback
+          // Keeps navigation inside the WebView. Without this, taps on any
+          // in-chart link / the worker's blob URL get routed to Linking.
+          // We return true for everything — the datafeed only fetches from
+          // our backend and the TV library loads sub-resources from
+          // CHART_LIB_URL.
+          onShouldStartLoadWithRequest={() => true}
+          setSupportMultipleWindows={false}
           onMessage={onWebViewMessage}
           onError={(e: any) => setChartError(`WebView error: ${e?.nativeEvent?.description || 'unknown'}`)}
           onHttpError={(e: any) => setChartError(`HTTP ${e?.nativeEvent?.statusCode || ''} loading chart library`)}

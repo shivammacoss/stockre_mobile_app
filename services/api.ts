@@ -209,6 +209,14 @@ export const instrumentsAPI = {
   subscribeZerodhaInstrument: (instrument: any) =>
     api.post('/api/zerodha/instruments/subscribe', { instrument }),
 
+  // Subscribe by tradingsymbol alone — server resolves the token from its
+  // NFO/BFO/MCX caches. Used when the user taps an option strike in the
+  // chain: option contracts aren't in allInstruments (tens of thousands
+  // of strikes; we only keep underlyings warm), so there's no instrument
+  // object to hand to subscribeZerodhaInstrument above.
+  subscribeZerodhaInstrumentBySymbol: (symbol: string) =>
+    api.post('/api/zerodha/instruments/subscribe-by-symbol', { symbol }),
+
   // Unsubscribe a Zerodha instrument by token
   unsubscribeZerodhaInstrument: (token: number | string) =>
     api.delete(`/api/zerodha/instruments/subscribe/${token}`),
