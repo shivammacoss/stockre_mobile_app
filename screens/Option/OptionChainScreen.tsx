@@ -115,7 +115,50 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     if (segment === 'CRYPTO') return `${underlying}USD`;
     return underlying;
   }, [segment, underlying]);
-  const spot = prices[spotSymbol];
+
+  // Resolve the spot tick. Exact match works for indices (NIFTY, BANKNIFTY,
+  // SENSEX — Zerodha streams those under their plain name) and crypto perps.
+  // MCX underlyings (CRUDEOIL, GOLD, SILVER) have NO index stream — Zerodha
+  // only ticks specific contracts (CRUDEOIL26MAYFUT, GOLD26JUNFUT, …), so we
+  // look for the nearest-expiry FUTURES contract for that underlying and
+  // use its LTP as the spot proxy (basis is ~pennies for the front month).
+  //
+  // The pattern is STRICT: `^<UNDERLYING><YY><MON3>FUT$`. Earlier I used a
+  // bare `startsWith(needle)` check which would:
+  //   - match `CRUDEOIL26MAY2800CE` as the spot (picking an option premium
+  //     of ~₹870 as the "spot" of a commodity trading at ~₹6500)
+  //   - match `GOLDM26JUNFUT` (gold mini, a different commodity) when the
+  //     user picked `GOLD`
+  // Both produced nonsense in the header chip.
+  const spot = useMemo(() => {
+    if (!spotSymbol) return null;
+    const direct = prices[spotSymbol];
+    const priceOf = (t: any) => Number(t?.lastPrice || t?.bid || t?.ask || 0);
+    if (direct && priceOf(direct) > 0) return direct;
+    const needle = String(spotSymbol).toUpperCase();
+    const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // ^<UNDERLYING><YY><MON3>FUT$ — no strike, not an option, correct commodity.
+    const futRe = new RegExp(`^${escaped}(\\d{2})([A-Z]{3})FUT$`);
+    const MON_INDEX: Record<string, number> = {
+      JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6,
+      JUL: 7, AUG: 8, SEP: 9, OCT: 10, NOV: 11, DEC: 12,
+    };
+    let best: any = null;
+    let bestScore = Number.POSITIVE_INFINITY;
+    for (const key of Object.keys(prices)) {
+      const m = String(key).toUpperCase().match(futRe);
+      if (!m) continue;
+      const t = prices[key];
+      if (!t || priceOf(t) <= 0) continue;
+      // Score by YY*100 + month so the earliest chronological contract wins.
+      const score = Number(m[1]) * 100 + (MON_INDEX[m[2]] || 99);
+      if (score < bestScore) {
+        bestScore = score;
+        best = t;
+      }
+    }
+    return best;
+  }, [prices, spotSymbol]);
 
   // Which strike is closest to spot — used for the ATM highlight row.
   const atmIndex = useMemo(() => {
@@ -253,6 +296,13 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
 
   const renderRow = ({ item, index }: { item: Strike; index: number }) => {
     const isAtm = index === visibleAtmIndex;
+    // Divider above the ATM row — a horizontal line with a floating badge
+    // carrying the live spot price. Mirrors the web OptionsChain so the
+    // user can see WHERE the underlying is sitting between the visible
+    // strikes at a glance. Only the first render inside the visible slice
+    // gets it (can't repeat).
+    const spotLtpNum = Number(spotDisplay || 0);
+    const showAtmDivider = index === visibleAtmIndex && spotLtpNum > 0 && index > 0;
     // Live overlay — snapshot LTP + live socket tick if present.
     const ceSym = item.ce?.symbol;
     const peSym = item.pe?.symbol;
@@ -276,6 +326,17 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     const peActive = activeLeg?.strike === item.strike && activeLeg.side === 'pe';
 
     return (
+      <>
+        {showAtmDivider && (
+          <View style={styles.atmDividerWrap} pointerEvents="none">
+            <View style={[styles.atmDividerLine, { backgroundColor: colors.blue }]} />
+            <View style={[styles.atmDividerBadge, { backgroundColor: colors.bg0, borderColor: colors.blue }]}>
+              <Text style={{ color: colors.blue, fontSize: 11, fontWeight: '800' }}>
+                {spotLtpNum.toFixed(2)}
+              </Text>
+            </View>
+          </View>
+        )}
       <View style={[styles.row, isAtm && { backgroundColor: colors.blueDim }]}>
         {/* CE side — whole area taps to reveal pills. When active the
             pill row spans the full side (CLOSE hides during reveal) so
@@ -376,11 +437,22 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
           )}
         </Pressable>
       </View>
+      </>
     );
   };
 
   // Underlying spot — show only lastPrice; bid/ask aren't an LTP.
-  const spotDisplay = spot?.lastPrice;
+  const spotDisplay = spot?.lastPrice ?? spot?.bid ?? spot?.ask;
+  // Day-change %: prefer pre-computed change, else ltp-vs-close.
+  const spotChangePct = (() => {
+    const p = Number(spotDisplay || 0);
+    const close = Number(spot?.close || spot?.ohlc?.close || spot?.previousClose || 0);
+    if (spot && typeof spot.change === 'number' && close > 0) {
+      return (spot.change / close) * 100;
+    }
+    if (p > 0 && close > 0) return ((p - close) / close) * 100;
+    return null;
+  })();
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg0 }]} edges={['top']}>
@@ -391,11 +463,39 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={{ color: colors.t1, fontSize: 17, fontWeight: '700' }}>Option Chain</Text>
-          <Text style={{ color: colors.t3, fontSize: 11 }}>
-            {underlying}
-            {spotDisplay ? ` · ₹${Number(spotDisplay).toFixed(2)}` : ''}
-          </Text>
+          <Text style={{ color: colors.t3, fontSize: 11 }}>{underlying}</Text>
         </View>
+        {/* Spot-price chip — visible colored pill instead of the tiny gray
+            text it used to be. Green/red tint follows intraday direction
+            so glancing at the header tells you whether calls or puts are
+            likely in the money. Currency prefix is the underlying's
+            native currency: Indian segments → ₹, crypto / international
+            → $. */}
+        {spotDisplay != null && Number(spotDisplay) > 0 && (
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 4,
+              paddingHorizontal: 8,
+              paddingVertical: 4,
+              borderRadius: 8,
+              borderWidth: 1,
+              backgroundColor: (spotChangePct ?? 0) >= 0 ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)',
+              borderColor: (spotChangePct ?? 0) >= 0 ? 'rgba(16,185,129,0.35)' : 'rgba(239,68,68,0.35)',
+              marginHorizontal: 6,
+            }}
+          >
+            <Text style={{ color: (spotChangePct ?? 0) >= 0 ? colors.green : colors.red, fontSize: 12, fontWeight: '800' }}>
+              {segment === 'CRYPTO' ? '$' : '₹'}{Number(spotDisplay).toFixed(2)}
+            </Text>
+            {spotChangePct !== null && (
+              <Text style={{ color: (spotChangePct ?? 0) >= 0 ? colors.green : colors.red, fontSize: 10, fontWeight: '600', opacity: 0.9 }}>
+                {spotChangePct >= 0 ? '+' : ''}{spotChangePct.toFixed(2)}%
+              </Text>
+            )}
+          </View>
+        )}
         <TouchableOpacity onPress={onRefresh} style={styles.iconBtn} hitSlop={10}>
           <Ionicons name="refresh" size={20} color={colors.t2} />
         </TouchableOpacity>
@@ -582,6 +682,12 @@ const styles = StyleSheet.create({
   hdrCell: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5, textAlign: 'center' },
 
   row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 10, minHeight: 54 },
+  // ATM divider — 2px horizontal line with a floating price badge
+  // centered on it. Rendered above the ATM row so the user sees exactly
+  // where spot sits between strikes at a glance.
+  atmDividerWrap: { height: 18, marginHorizontal: 12, alignItems: 'center', justifyContent: 'center', position: 'relative' },
+  atmDividerLine: { position: 'absolute', left: 0, right: 0, top: 8, height: 2 },
+  atmDividerBadge: { borderWidth: 2, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 1 },
   // Wraps CLOSE + LTP (CE) or LTP + CLOSE (PE) into one tap area so
   // clicking either column reveals the SELL/chart/BUY pills.
   sidePressable: { flex: 1, flexDirection: 'row', alignItems: 'center' },
