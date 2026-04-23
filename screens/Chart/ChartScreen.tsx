@@ -691,13 +691,23 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
       <View style={{ flex: 1 }}>
         <WebView
           ref={webViewRef}
-          // baseUrl is the document origin inside the WebView. We intentionally
-          // use API_URL (not CHART_LIB_URL): all data-fetches target API_URL
-          // (historical candles, live ticks), so making that same-origin with
-          // the document avoids mixed-content blocks when API_URL is http://
-          // (e.g. local-dev on a phone talking to the Mac's LAN IP) while
-          // CHART_LIB_URL is served same-origin from the backend too.
-          source={{ html: chartHTML, baseUrl: API_URL }}
+          // baseUrl is the document origin inside the WebView. Use
+          // CHART_LIB_URL (not API_URL) so the TradingView library + its
+          // lazy-loaded `bundles/*` chunks stay SAME-ORIGIN with the
+          // document. The library fetches chunks via fetch()/import()
+          // which respect CORS, and stocktre.com/charting_library/ does
+          // NOT send CORS headers — so on production where API_URL and
+          // CHART_LIB_URL are different hosts, pointing baseUrl at the
+          // API host would block every chunk and stall the chart.
+          //
+          // API calls go cross-origin, but the API server explicitly
+          // allows stocktre.com as an origin (access-control-allow-origin
+          // + access-control-allow-credentials), so that direction works.
+          //
+          // In local dev CHART_LIB_URL is http://<lan-ip>:3001 too (the
+          // backend now serves /charting_library/) so same-origin holds
+          // for both library AND API — no mixed content either way.
+          source={{ html: chartHTML, baseUrl: CHART_LIB_URL }}
           style={{ flex: 1, backgroundColor: isDark ? '#000' : '#fff' }}
           javaScriptEnabled
           domStorageEnabled
