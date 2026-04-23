@@ -19,12 +19,14 @@ export default {
     // OTA updates are tied to the native version — bump `version` above
     // whenever package.json changes require a new APK.
     runtimeVersion: { policy: "appVersion" },
-    // EAS Update temporarily disabled — will re-enable with new account's URL
-    // after `eas init` + `eas update:configure` under owner "stockre".
     updates: {
-      enabled: false,
+      enabled: true,
       checkAutomatically: "ON_LOAD",
       fallbackToCacheTimeout: 0,
+      url: "https://u.expo.dev/afe771a2-0b1a-4a4f-98b5-3bfbc5721796",
+      requestHeaders: {
+        "expo-channel-name": process.env.EXPO_UPDATES_CHANNEL || "preview",
+      },
     },
     splash: {
       image: "./assets/app-icon.png",
