@@ -265,4 +265,13 @@ export const notificationAPI = {
   getUnreadCount: (userId: string) => api.get(`/api/user/notifications/${userId}/unread-count`),
 };
 
+// Weekly-settlement report (user-scoped; admin has its own endpoints).
+// Uses the user's JWT — auth header is attached by the axios interceptor.
+export const reportsAPI = {
+  getWeeklySettlement: (userId: string) =>
+    api.get(`/api/user/weekly-settlement/${userId}`),
+  getWeeklySettlementDetails: (userId: string, weekStart: string) =>
+    api.get(`/api/user/weekly-settlement/${userId}/details`, { params: { weekStart } }),
+};
+
 export default api;

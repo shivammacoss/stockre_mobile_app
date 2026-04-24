@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSocket } from '../../contexts/SocketContext';
 import { useTheme } from '../../theme/ThemeContext';
-import { tradingAPI, walletAPI } from '../../services/api';
+import { tradingAPI, walletAPI, reportsAPI } from '../../services/api';
 import AppHeader from '../../components/AppHeader';
 import MobileStatusFooter from '../../components/MobileStatusFooter';
 
@@ -35,12 +35,13 @@ const MODE_META: Record<string, { letter: string; color: string; bg: string }> =
    Header → Date filters → 4-tab pill bar → Card list
    ================================================================ */
 
-type TabKey = 'open' | 'pending' | 'history' | 'cancelled';
+type TabKey = 'open' | 'pending' | 'history' | 'cancelled' | 'weekly';
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'open', label: 'Open' },
   { key: 'pending', label: 'Pending' },
   { key: 'history', label: 'History' },
   { key: 'cancelled', label: 'Cancelled' },
+  { key: 'weekly', label: 'Weekly' },
 ];
 
 const OrdersScreen: React.FC = () => {
@@ -499,22 +500,26 @@ const OrdersScreen: React.FC = () => {
         </View>
       )}
 
-      {/* Card list */}
-      <FlatList
-        data={getData()}
-        renderItem={renderCard}
-        keyExtractor={(item, idx) => `${item.oderId || item._id || 'row'}-${item.groupId || item.tradeId || ''}-${idx}`}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.blue} />}
-        contentContainerStyle={{ padding: 12, paddingBottom: 120 }}
-        ListEmptyComponent={
-          <View style={{ alignItems: 'center', paddingVertical: 48 }}>
-            <Text style={{ fontSize: 36, marginBottom: 8 }}>📋</Text>
-            <Text style={{ color: colors.t1, fontWeight: '500', fontSize: 15 }}>
-              No {tab === 'open' ? 'open positions' : tab === 'pending' ? 'pending orders' : tab === 'history' ? 'trade history' : 'cancelled orders'}
-            </Text>
-          </View>
-        }
-      />
+      {/* Card list / weekly report */}
+      {tab === 'weekly' ? (
+        <WeeklySettlementMobile userId={user?.oderId} />
+      ) : (
+        <FlatList
+          data={getData()}
+          renderItem={renderCard}
+          keyExtractor={(item, idx) => `${item.oderId || item._id || 'row'}-${item.groupId || item.tradeId || ''}-${idx}`}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.blue} />}
+          contentContainerStyle={{ padding: 12, paddingBottom: 120 }}
+          ListEmptyComponent={
+            <View style={{ alignItems: 'center', paddingVertical: 48 }}>
+              <Text style={{ fontSize: 36, marginBottom: 8 }}>📋</Text>
+              <Text style={{ color: colors.t1, fontWeight: '500', fontSize: 15 }}>
+                No {tab === 'open' ? 'open positions' : tab === 'pending' ? 'pending orders' : tab === 'history' ? 'trade history' : 'cancelled orders'}
+              </Text>
+            </View>
+          }
+        />
+      )}
 
       {/* ── Mobile Status Footer (INR only) ── */}
       <MobileStatusFooter
@@ -866,5 +871,197 @@ const styles = StyleSheet.create({
   legCellTime: { flex: 1, fontSize: 11 },
   legCellPrice: { width: 80, fontSize: 11, fontWeight: '600' },
 });
+
+/**
+ * Weekly Settlement mobile panel — shows the same per-user weekly P/L
+ * buckets as the web OrdersPage's Weekly tab. Currency is INR by default
+ * (matches the mobile footer convention — mobile is India-first UI).
+ */
+interface WeekBucket {
+  weekKey?: string;
+  weekNumber: number;
+  year: number;
+  weekStart: string;
+  weekEnd: string;
+  totalProfit: number;
+  totalLoss: number;
+  netPnL: number;
+  tradeCount: number;
+}
+interface WeekTrade {
+  _id?: string;
+  tradeId?: string;
+  symbol: string;
+  side?: string;
+  volume?: number;
+  entryPrice?: number;
+  closePrice?: number;
+  profit?: number;
+  closedAt?: string;
+}
+
+const WeeklySettlementMobile: React.FC<{ userId?: string }> = ({ userId }) => {
+  const { colors } = useTheme();
+  const [weeks, setWeeks] = useState<WeekBucket[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState<WeekBucket | null>(null);
+  const [trades, setTrades] = useState<WeekTrade[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  const fmt = (n: number) => {
+    const v = Number(n) || 0;
+    const s = v < 0 ? '-' : '';
+    return `${s}₹${Math.abs(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+  const fmtRange = (start: string, end: string) => {
+    if (!start || !end) return '—';
+    const f = (d: string) => new Date(d).toLocaleDateString(undefined, { day: '2-digit', month: 'short' });
+    return `${f(start)} → ${f(end)}`;
+  };
+
+  const load = useCallback(async () => {
+    if (!userId) return;
+    setLoading(true);
+    try {
+      const res = await reportsAPI.getWeeklySettlement(userId);
+      setWeeks(Array.isArray(res.data?.weeks) ? res.data.weeks : []);
+    } catch {
+      setWeeks([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [userId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const openDetail = async (w: WeekBucket) => {
+    setSelected(w);
+    setDetailLoading(true);
+    setTrades([]);
+    try {
+      const res = await reportsAPI.getWeeklySettlementDetails(userId || '', w.weekStart);
+      setTrades(Array.isArray(res.data?.trades) ? res.data.trades : []);
+    } catch {
+      setTrades([]);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  return (
+    <View style={{ flex: 1 }}>
+      <FlatList
+        data={weeks}
+        keyExtractor={(w) => w.weekKey || w.weekStart}
+        refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.blue} />}
+        contentContainerStyle={{ padding: 12, paddingBottom: 120 }}
+        ListHeaderComponent={
+          <View style={{ marginBottom: 8 }}>
+            <Text style={{ color: colors.t1, fontSize: 16, fontWeight: '700' }}>Weekly Settlement</Text>
+            <Text style={{ color: colors.t3, fontSize: 11, marginTop: 2 }}>
+              Your closed-trade P/L grouped by week (Mon → Sun)
+            </Text>
+          </View>
+        }
+        ListEmptyComponent={
+          !loading ? (
+            <View style={{ alignItems: 'center', paddingVertical: 48 }}>
+              <Text style={{ fontSize: 36, marginBottom: 8 }}>📊</Text>
+              <Text style={{ color: colors.t1, fontWeight: '500', fontSize: 15 }}>No closed trades yet</Text>
+            </View>
+          ) : null
+        }
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            onPress={() => openDetail(item)}
+            style={{
+              backgroundColor: colors.bg1, borderWidth: 1, borderColor: colors.border,
+              borderRadius: 10, padding: 12, marginBottom: 10,
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <View>
+                <Text style={{ color: colors.t1, fontSize: 14, fontWeight: '700' }}>
+                  Week {item.weekNumber} · {item.year}
+                </Text>
+                <Text style={{ color: colors.t3, fontSize: 11, marginTop: 2 }}>
+                  {fmtRange(item.weekStart, item.weekEnd)}
+                </Text>
+              </View>
+              <Text style={{ color: item.netPnL >= 0 ? colors.green : colors.red, fontSize: 15, fontWeight: '800' }}>
+                {fmt(item.netPnL)}
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 }}>
+              <Text style={{ color: colors.t3, fontSize: 11 }}>Trades: <Text style={{ color: colors.t1 }}>{item.tradeCount}</Text></Text>
+              <Text style={{ color: colors.green, fontSize: 11 }}>+{fmt(item.totalProfit).replace('-', '')}</Text>
+              <Text style={{ color: colors.red, fontSize: 11 }}>-{fmt(item.totalLoss).replace('-', '')}</Text>
+            </View>
+          </TouchableOpacity>
+        )}
+      />
+
+      {/* Drill-down modal */}
+      <Modal visible={!!selected} animationType="slide" transparent onRequestClose={() => setSelected(null)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: colors.bg0, borderTopLeftRadius: 18, borderTopRightRadius: 18, maxHeight: '85%', paddingBottom: 20 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+              <View>
+                <Text style={{ color: colors.t1, fontSize: 15, fontWeight: '700' }}>
+                  Week {selected?.weekNumber} · {selected?.year}
+                </Text>
+                <Text style={{ color: colors.t3, fontSize: 11, marginTop: 2 }}>
+                  {selected && fmtRange(selected.weekStart, selected.weekEnd)}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setSelected(null)} hitSlop={10}>
+                <Ionicons name="close" size={22} color={colors.t2} />
+              </TouchableOpacity>
+            </View>
+            {detailLoading ? (
+              <View style={{ padding: 32, alignItems: 'center' }}>
+                <ActivityIndicator color={colors.blue} />
+              </View>
+            ) : trades.length === 0 ? (
+              <View style={{ padding: 32, alignItems: 'center' }}>
+                <Text style={{ color: colors.t3 }}>No trades in this week.</Text>
+              </View>
+            ) : (
+              <ScrollView contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 10 }}>
+                {trades.map((t) => (
+                  <View
+                    key={t._id || t.tradeId}
+                    style={{ backgroundColor: colors.bg1, borderRadius: 10, borderWidth: 1, borderColor: colors.border, padding: 10, marginBottom: 8 }}
+                  >
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                      <Text style={{ color: colors.t1, fontSize: 13, fontWeight: '700' }}>{t.symbol}</Text>
+                      <Text style={{ color: (Number(t.profit) || 0) >= 0 ? colors.green : colors.red, fontSize: 13, fontWeight: '700' }}>
+                        {fmt(Number(t.profit) || 0)}
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 14, marginTop: 4, flexWrap: 'wrap' }}>
+                      <Text style={{ color: colors.t3, fontSize: 11 }}>
+                        {(t.side || '').toUpperCase()} · {t.volume} lots
+                      </Text>
+                      <Text style={{ color: colors.t3, fontSize: 11 }}>
+                        Entry {Number(t.entryPrice || 0).toFixed(2)} → Close {Number(t.closePrice || 0).toFixed(2)}
+                      </Text>
+                    </View>
+                    {t.closedAt && (
+                      <Text style={{ color: colors.t3, fontSize: 10, marginTop: 3 }}>
+                        {new Date(t.closedAt).toLocaleString()}
+                      </Text>
+                    )}
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+};
 
 export default OrdersScreen;
