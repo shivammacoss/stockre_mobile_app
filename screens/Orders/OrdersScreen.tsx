@@ -345,6 +345,7 @@ const OrdersScreen: React.FC = () => {
     if (rl.includes('tp')) return colors.green;
     if (rl.includes('stop out')) return '#dc2626';
     if (rl.includes('auto square')) return colors.amber;
+    if (rl.includes('weekly settlement') || rl.includes('settled')) return colors.blue;
     return colors.t3;
   };
 
@@ -371,6 +372,20 @@ const OrdersScreen: React.FC = () => {
           </View>
           <Text style={{ color: colors.t1, fontSize: 14, fontWeight: '700' }} numberOfLines={1}>{pos.symbol}</Text>
           <Text style={{ color: colors.t3, fontSize: 11 }}>{pos.volume || 0} lots</Text>
+          {/* Weekly-settlement carry indicator — open tab only. Tells the
+              user this position was closed + reopened at last Saturday's
+              settlement price; SL/TP preserved, no fresh brokerage. */}
+          {tab === 'open' && pos.carriedFromSettlement && (
+            <View style={{
+              paddingHorizontal: 5, paddingVertical: 1, borderRadius: 8,
+              backgroundColor: 'rgba(59,130,246,0.18)', borderColor: 'rgba(59,130,246,0.4)',
+              borderWidth: 1, marginLeft: 2,
+            }}>
+              <Text style={{ color: colors.blue, fontSize: 9, fontWeight: '800' }}>
+                ↻ {pos.lastSettlementWeek || 'Settled'}
+              </Text>
+            </View>
+          )}
         </View>
         {(tab === 'open' || tab === 'history') && (
           <Text style={{ color: livePnl >= 0 ? colors.green : colors.red, fontSize: 14, fontWeight: '700' }}>
