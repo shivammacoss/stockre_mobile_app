@@ -13,6 +13,7 @@ type PositionCallback = (data: any) => void;
  *   - 'delta_price_tick'    → single Delta Exchange price
  *   - 'delta_prices_batch'  → all Delta Exchange prices
  *   - 'zerodha-tick'        → array of Zerodha ticks
+ *   - 'accelpix-tick'       → array of Accelpix (pix-apidata) ticks
  *   - 'positionUpdate'      → { mode, positions }
  *   - 'pendingOrderExecuted'→ order fill notification
  *   - 'legClosedBySLTP'     → SL/TP hit on a leg
@@ -24,6 +25,7 @@ type PositionCallback = (data: any) => void;
  *   - 'join'                → join user room for targeted events
  *   - 'subscribePrices'     → join prices broadcast room
  *   - 'subscribeZerodhaTicks' → join Zerodha tick room
+ *   - 'subscribeAccelpixTicks' → join Accelpix tick room
  */
 class SocketService {
   private socket: Socket | null = null;
@@ -68,6 +70,11 @@ class SocketService {
       if (this.userId) this.joinUserRoom(this.userId);
       this.socket?.emit('subscribePrices', []);
       this.socket?.emit('subscribeZerodhaTicks');
+      // Accelpix tick room — without this the mobile app never receives
+      // the live LTP / bid / ask for Indian instruments served by the
+      // pix-apidata feed, and the option-chain rows render '—' along
+      // with no ATM divider line.
+      this.socket?.emit('subscribeAccelpixTicks');
     };
 
     this.socket.on('connect', () => {
@@ -158,6 +165,29 @@ class SocketService {
               change: t.change,
               lastUpdated: Date.now(),
               ...t,
+            };
+          }
+        });
+        this.notifyPriceListeners();
+      }
+    });
+
+    // ── Accelpix (pix-apidata) Indian market ticks ──
+    // Server emits these for: option chain contract subscriptions
+    // (drives chain LTP/bid/ask/OI), the underlying spot subscription
+    // (drives the chain header chip + ATM divider position), and any
+    // explicit instrument the user added via Accelpix search. Same
+    // {symbol, lastPrice, bid, ask, high, low, oi, volume, ...} shape
+    // the service normalises in _handleTrade / _handleBest.
+    this.socket.on('accelpix-tick', (ticks: any[]) => {
+      if (Array.isArray(ticks)) {
+        ticks.forEach(t => {
+          const sym = t.symbol || t.ticker;
+          if (sym) {
+            this.priceCache[sym] = {
+              ...this.priceCache[sym],
+              ...t,
+              lastUpdated: Date.now(),
             };
           }
         });
