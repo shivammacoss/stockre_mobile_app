@@ -103,7 +103,7 @@ function looksIndian(sym: string, inst?: any): boolean {
     if (cat.startsWith('nse_') || cat.startsWith('bse_') || cat.startsWith('mcx_')) return true;
     // Every Zerodha instrument carries a numeric token; Delta / Infoway don't.
     if (inst.token) return true;
-    if (String(inst.source || '').toLowerCase() === 'zerodha' || String(inst.source || '').toLowerCase() === 'truedata') return true;
+    if (String(inst.source || '').toLowerCase() === 'zerodha' || String(inst.source || '').toLowerCase() === 'accelpix') return true;
   }
   const s = sym.toUpperCase();
   // Indian F&O contracts. Two accepted endings:

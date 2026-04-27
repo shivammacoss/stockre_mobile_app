@@ -17,16 +17,25 @@ import AppHeader from '../../components/AppHeader';
 const SW = Dimensions.get('window').width;
 const SH = Dimensions.get('window').height;
 
-// Data source detection for historical candle API routing
+// Data source detection for historical candle API routing.
+//
+// Returning 'zerodha' for Indian symbols isn't a hard pin to Kite — the
+// WebView's getBars walks a candidate list (Zerodha → Accelpix) so the
+// Accelpix backend (pix-apidata) takes over automatically when Zerodha
+// has no session. We default to 'zerodha' here so the existing Zerodha-
+// stamped instruments keep their current ordering; pure Accelpix-side
+// instruments get 'accelpix' below.
 function getDataSource(symbol: string): string {
   const s = (symbol || '').toUpperCase();
+  // Accelpix continuous-future tickers (RELIANCE-1, NIFTY-2, etc.) come
+  // exclusively from the Accelpix master — no Zerodha equivalent.
+  if (/^[A-Z&]{2,}-\d+$/.test(s)) return 'accelpix';
   // Indian F&O tradingsymbol patterns. Must come before the generic
   // keyword check so deep-linked options from OptionChain route to
-  // Zerodha (they aren't on MetaAPI / Delta).
+  // Zerodha (they aren't on MetaAPI / Delta). The WebView's getBars
+  // falls back to Accelpix automatically if Zerodha returns nothing.
   //   Monthly: HDFCLIFE26APR525CE, NIFTY25APR23000PE, GOLDM26MAYFUT
   //   Weekly : NIFTY24D0524000CE (year 24, month-letter D, day 05, strike 24000)
-  // The permissive form covers both: letters prefix, digits, anything,
-  // a digit, then CE/PE/FUT suffix.
   if (/^[A-Z&]+\d{2}[A-Z]{3}\d*(CE|PE|FUT)$/.test(s)) return 'zerodha';
   if (/^[A-Z&]{2,}\d+.*\d(CE|PE)$/.test(s)) return 'zerodha';
   // Indian instruments (index / watchlist shortcuts)
@@ -91,13 +100,16 @@ var livePrices = {};
 var subscriptions = {};
 
 // ─── Resolve interval strings ───
+// accelpix minute strings ('1','5','15','60','EOD') match what the
+// pix-apidata SDK accepts on getIntraEod / getEod — see server-side
+// AccelpixService.INTERVAL_MAP for the full set.
 var TV_TO_API = {
-  '1': { zerodha:'minute', meta:'1m', delta:'1m', sec:60 },
-  '5': { zerodha:'5minute', meta:'5m', delta:'5m', sec:300 },
-  '15':{ zerodha:'15minute',meta:'15m',delta:'15m',sec:900 },
-  '60':{ zerodha:'60minute',meta:'1h', delta:'1h', sec:3600 },
-  'D': { zerodha:'day',     meta:'1d', delta:'1d', sec:86400 },
-  '1D':{ zerodha:'day',     meta:'1d', delta:'1d', sec:86400 },
+  '1': { zerodha:'minute', meta:'1m', delta:'1m', accelpix:'1', sec:60 },
+  '5': { zerodha:'5minute', meta:'5m', delta:'5m', accelpix:'5', sec:300 },
+  '15':{ zerodha:'15minute',meta:'15m',delta:'15m',accelpix:'15',sec:900 },
+  '60':{ zerodha:'60minute',meta:'1h', delta:'1h', accelpix:'60',sec:3600 },
+  'D': { zerodha:'day',     meta:'1d', delta:'1d', accelpix:'EOD',sec:86400 },
+  '1D':{ zerodha:'day',     meta:'1d', delta:'1d', accelpix:'EOD',sec:86400 },
 };
 var DELTA_LB = {'1':172800,'5':604800,'15':1209600,'60':2592000,'1D':31536000,'D':31536000};
 
@@ -145,37 +157,51 @@ var Datafeed = {
     var from = pp.from;
     var to = pp.to;
     var m = TV_TO_API[res]||TV_TO_API['60'];
-    var url;
+    // Build candidate URL list. For Indian symbols Zerodha is the
+    // primary source; if its session isn't authenticated (typical
+    // outside Kite trading hours, or right after the daily 08:00 IST
+    // token reset), the request returns no candles. Fall back to
+    // Accelpix (pix-apidata) which has its own EOD + intraday store.
+    var urls = [];
     if(currentDataSource==='zerodha'){
-      url=API_BASE+'/api/zerodha/historical/'+encodeURIComponent(sym)+'?interval='+m.zerodha+'&from='+from+'&to='+to;
+      urls.push(API_BASE+'/api/zerodha/historical/'+encodeURIComponent(sym)+'?interval='+m.zerodha+'&from='+from+'&to='+to);
+      urls.push(API_BASE+'/api/accelpix/historical/'+encodeURIComponent(sym)+'?interval='+(m.accelpix||'5')+'&from='+from+'&to='+to);
+    } else if(currentDataSource==='accelpix'){
+      urls.push(API_BASE+'/api/accelpix/historical/'+encodeURIComponent(sym)+'?interval='+(m.accelpix||'5')+'&from='+from+'&to='+to);
     } else if(currentDataSource==='delta'){
       var lb=DELTA_LB[res]||604800;
-      url=API_BASE+'/api/delta/history/'+encodeURIComponent(sym)+'?resolution='+m.delta+'&lookbackSec='+lb;
+      urls.push(API_BASE+'/api/delta/history/'+encodeURIComponent(sym)+'?resolution='+m.delta+'&lookbackSec='+lb);
     } else {
-      url=API_BASE+'/api/infoway/historical/'+encodeURIComponent(sym)+'?timeframe='+m.meta+'&limit=500&startTime='+from;
+      urls.push(API_BASE+'/api/infoway/historical/'+encodeURIComponent(sym)+'?timeframe='+m.meta+'&limit=500&startTime='+from);
     }
-    var ctrl=new AbortController();
-    var tid=setTimeout(function(){ctrl.abort();},15000);
-    fetch(url,{signal:ctrl.signal}).then(function(r){return r.json();}).then(function(data){
-      clearTimeout(tid);
-      var raw=Array.isArray(data&&data.candles)?data.candles:[];
-      if(data&&data.success&&raw.length>0){
-        var bars=[];
-        for(var i=0;i<raw.length;i++){
-          var t=candleMs(raw[i].time);
-          if(t!=null)bars.push({time:t,open:raw[i].open,high:raw[i].high,low:raw[i].low,close:raw[i].close,volume:raw[i].volume||0});
+    // Walk the candidates serially; first one with candles wins. Each
+    // attempt has its own 15s abort controller so a slow first source
+    // can't starve the fallback.
+    var attempt = 0;
+    function tryNext(){
+      if(attempt >= urls.length){ onHist([],{noData:true}); return; }
+      var url = urls[attempt++];
+      var ctrl=new AbortController();
+      var tid=setTimeout(function(){ctrl.abort();},15000);
+      fetch(url,{signal:ctrl.signal}).then(function(r){return r.json();}).then(function(data){
+        clearTimeout(tid);
+        var raw=Array.isArray(data&&data.candles)?data.candles:[];
+        if(data&&data.success&&raw.length>0){
+          var bars=[];
+          for(var i=0;i<raw.length;i++){
+            var t=candleMs(raw[i].time);
+            if(t!=null)bars.push({time:t,open:raw[i].open,high:raw[i].high,low:raw[i].low,close:raw[i].close,volume:raw[i].volume||0});
+          }
+          var fMs=from*1000,tMs=to*1000;
+          var f=bars.filter(function(b){return b.time>=fMs&&b.time<=tMs;});
+          var out=f.length>0?f:bars;
+          onHist(out.length>0?out:[],{noData:out.length===0});
+        } else {
+          tryNext();
         }
-        var fMs=from*1000,tMs=to*1000;
-        var f=bars.filter(function(b){return b.time>=fMs&&b.time<=tMs;});
-        var out=f.length>0?f:bars;
-        onHist(out.length>0?out:[],{noData:out.length===0});
-      } else {
-        onHist([],{noData:true});
-      }
-    }).catch(function(e){
-      clearTimeout(tid);
-      onHist([],{noData:true});
-    });
+      }).catch(function(){ clearTimeout(tid); tryNext(); });
+    }
+    tryNext();
   },
   subscribeBars: function(si,res,onRT,uid){
     subscriptions[uid]={symbol:si.name,resolution:res,lastBarTime:null,lastBarOpen:0,lastBarHigh:0,lastBarLow:0,callback:onRT};
