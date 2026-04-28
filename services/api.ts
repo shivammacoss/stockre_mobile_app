@@ -186,7 +186,7 @@ export const walletAPI = {
 
 // ═══ Instruments ═══
 export const instrumentsAPI = {
-  // MetaAPI instruments (forex, stocks, indices, commodities)
+  // Infoway instruments (forex, stocks, indices, commodities)
   getInstruments: () => api.get('/api/instruments'),
 
   // Delta Exchange instruments (crypto)

@@ -8,10 +8,10 @@ type PositionCallback = (data: any) => void;
 /**
  * Socket service — mirrors the web client's socketService.js exactly.
  * Server emits these events:
- *   - 'price_tick'          → single MetaAPI price { symbol, bid, ask, ... }
- *   - 'prices_batch'        → all MetaAPI prices { EURUSD: {...}, XAUUSD: {...} }
- *   - 'delta_price_tick'    → single Delta Exchange price
- *   - 'delta_prices_batch'  → all Delta Exchange prices
+ *   - 'price_tick'          → single Infoway forex/metals price { symbol, bid, ask, ... }
+ *   - 'prices_batch'        → all Infoway forex/metals prices { EURUSD: {...}, XAUUSD: {...} }
+ *   - 'delta_price_tick'    → single Delta Exchange (crypto) price
+ *   - 'delta_prices_batch'  → all Delta Exchange (crypto) prices
  *   - 'zerodha-tick'        → array of Zerodha ticks
  *   - 'accelpix-tick'       → array of Accelpix (pix-apidata) ticks
  *   - 'positionUpdate'      → { mode, positions }
@@ -99,7 +99,7 @@ class SocketService {
       if (__DEV__) console.log('[Socket] Error:', error.message);
     });
 
-    // ── MetaAPI price events (EXACT event names from server) ──
+    // ── Infoway forex/metals price events (EXACT event names from server) ──
     this.socket.on('price_tick', (priceData: any) => {
       if (priceData?.symbol) {
         this.priceCache[priceData.symbol] = {

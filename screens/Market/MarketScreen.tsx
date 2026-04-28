@@ -167,10 +167,9 @@ const MarketScreen: React.FC = () => {
   const [takeProfit, setTakeProfit] = useState('');
   const [showSL, setShowSL] = useState(false);
   const [showTP, setShowTP] = useState(false);
-  const [leverage, setLeverage] = useState(100);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [tradingMode, setTradingMode] = useState('netting');
-  const [allowedTradeModes, setAllowedTradeModes] = useState<{ hedging: boolean; netting: boolean; binary: boolean }>({ hedging: false, netting: true, binary: false });
+  const [allowedTradeModes, setAllowedTradeModes] = useState<{ netting: boolean; binary: boolean }>({ netting: true, binary: false });
   // Binary state
   const [binaryDirection, setBinaryDirection] = useState<'up' | 'down'>('up');
   const [binaryAmount, setBinaryAmount] = useState('100');
@@ -262,11 +261,14 @@ const MarketScreen: React.FC = () => {
       const res = await userAPI.getUserDetails(uid);
       if (res.data?.success && res.data?.user) {
         const u = res.data.user;
-        let modes = u.allowedTradeModes || { hedging: false, netting: true, binary: false };
+        const raw = u.allowedTradeModes || {};
+        let modes: { netting: boolean; binary: boolean } = {
+          netting: true,
+          binary: !!raw.binary,
+        };
         if (u.role === 'admin' || u.role === 'superadmin') {
-          modes = { hedging: true, netting: true, binary: true };
+          modes = { netting: true, binary: true };
         }
-        modes.netting = true; // netting always enabled
         setAllowedTradeModes(modes);
         if (!modes[tradingMode as keyof typeof modes]) {
           setTradingMode('netting');
@@ -669,12 +671,6 @@ const MarketScreen: React.FC = () => {
   const lotStep = isOrderIndian ? 1 : 0.01;
   const minLot = isOrderIndian ? 1 : 0.01;
 
-  // Auto-switch away from hedging if symbol is Indian (web parity)
-  useEffect(() => {
-    if (orderSheetOpen && isOrderIndian && tradingMode === 'hedging') {
-      setTradingMode(allowedTradeModes.netting ? 'netting' : 'binary');
-    }
-  }, [orderSheetOpen, isOrderIndian, tradingMode, allowedTradeModes]);
   const bal = Number(wallet?.balance || 0);
 
   // ── INSTRUMENT ROW ──
@@ -975,12 +971,9 @@ const MarketScreen: React.FC = () => {
               {/* Trading mode tabs — only rendered when there's a real choice to make */}
               {(() => {
                 const modes = [
-                  { key: 'hedging', icon: 'swap-horizontal', label: 'Hedging' },
                   { key: 'netting', icon: 'stats-chart', label: 'Netting' },
                   { key: 'binary', icon: 'diamond-outline', label: 'Binary' },
-                ]
-                  .filter(m => allowedTradeModes[m.key as keyof typeof allowedTradeModes])
-                  .filter(m => !(m.key === 'hedging' && isOrderIndian));
+                ].filter(m => allowedTradeModes[m.key as keyof typeof allowedTradeModes]);
                 if (modes.length < 2) return null;
                 return (
                   <View style={{ flexDirection: 'row', marginBottom: 14, gap: 8 }}>
@@ -1001,82 +994,6 @@ const MarketScreen: React.FC = () => {
                   </View>
                 );
               })()}
-
-              {/* ═══════════ HEDGING MODE ═══════════ */}
-              {tradingMode === 'hedging' && (
-                <>
-                  {/* Order type: Market / Limit / Stop */}
-                  <View style={{ flexDirection: 'row', marginBottom: 14, gap: 6 }}>
-                    {[{ key: 'market', label: 'Market' }, { key: 'limit', label: 'Limit' }, { key: 'stop', label: 'Stop' }].map(t => (
-                      <TouchableOpacity key={t.key} style={[styles.orderTypeTab, { backgroundColor: colors.bg3 }, orderType === t.key && { backgroundColor: colors.blue }]} onPress={() => setOrderType(t.key)}>
-                        <Text style={{ color: orderType === t.key ? '#fff' : colors.t3, fontSize: 13, fontWeight: '600' }}>{t.label}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                  {/* SELL / BUY rendered as pinned section above the ScrollView
-                      (see styles.pinnedSideSection). Keeps prices + side buttons
-                      always visible while user scrolls through SL/TP. */}
-                  {/* Option Trade shortcut — opens the Option Chain for this
-                      instrument's underlying. Always visible so the entry
-                      point is consistent across the app; the Option Chain
-                      screen shows an empty state for symbols that don't
-                      have F&O contracts (forex / crypto-perp). */}
-                  <TouchableOpacity
-                    style={[styles.optionTradeBtn, { borderColor: colors.blue, backgroundColor: colors.blueDim }]}
-                    onPress={() => openOptionChainForSymbol(orderSymbol)}
-                    activeOpacity={0.85}
-                  >
-                    <Ionicons name="options-outline" size={16} color={colors.blue} />
-                    <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700', letterSpacing: 0.4 }}>OPTION TRADE</Text>
-                  </TouchableOpacity>
-                  {orderType !== 'market' && (
-                    <View style={styles.inputGroup}>
-                      <Text style={[styles.inputLabel, { color: colors.t2 }]}>{orderType === 'limit' ? 'Limit Price' : 'Stop Price'}</Text>
-                      <TextInput style={[styles.input, { backgroundColor: colors.bg3, color: colors.t1, borderColor: colors.border }]} value={limitPrice} onChangeText={setLimitPrice} keyboardType="decimal-pad" placeholder={(orderPrice?.bid || 0).toFixed(2)} placeholderTextColor={colors.t3} />
-                    </View>
-                  )}
-                  {/* Volume */}
-                  <Text style={{ color: colors.t1, fontSize: 12, fontWeight: '600', marginBottom: 6 }}>Volume (Lots)</Text>
-                  <View style={[styles.volumeRow, { backgroundColor: colors.bg3, borderColor: colors.border }]}>
-                    <TouchableOpacity style={styles.volumeBtn} onPress={() => setVolume(prev => Math.max(minLot, parseFloat(((parseFloat(prev) || minLot) - lotStep).toFixed(6))).toString())}>
-                      <Text style={[styles.volumeBtnTxt, { color: colors.t1 }]}>−</Text>
-                    </TouchableOpacity>
-                    <TextInput style={[styles.volumeInput, { color: colors.t1 }]} value={volume} onChangeText={v => { if (v === '' || /^[0-9]*\.?[0-9]*$/.test(v)) setVolume(v); }} keyboardType="decimal-pad" />
-                    <TouchableOpacity style={styles.volumeBtn} onPress={() => setVolume(prev => parseFloat(((parseFloat(prev) || minLot) + lotStep).toFixed(6)).toString())}>
-                      <Text style={[styles.volumeBtnTxt, { color: colors.t1 }]}>+</Text>
-                    </TouchableOpacity>
-                  </View>
-                  <Text style={{ color: colors.t3, fontSize: 11, marginBottom: 14 }}>{(parseFloat(volume) || 0).toFixed(isOrderIndian ? 0 : 4)} lots</Text>
-                  {/* Leverage */}
-                  <Text style={{ color: colors.t1, fontSize: 12, fontWeight: '600', marginBottom: 6 }}>Leverage</Text>
-                  <View style={{ flexDirection: 'row', gap: 6, marginBottom: 14 }}>
-                    {[50, 100, 200, 500].map(lv => (
-                      <TouchableOpacity key={lv} style={[styles.orderTypeTab, { backgroundColor: colors.bg3 }, leverage === lv && { backgroundColor: colors.blue }]} onPress={() => setLeverage(lv)}>
-                        <Text style={{ color: leverage === lv ? '#e2e8f0' : '#64748b', fontSize: 12, fontWeight: '600' }}>1:{lv}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                  {/* SL with pips */}
-                  <View style={styles.inputGroup}>
-                    <Text style={[styles.inputLabel, { color: colors.t2 }]}>Stop Loss</Text>
-                    <TextInput style={[styles.input, { backgroundColor: colors.bg3, color: colors.t1, borderColor: colors.border }]} value={stopLoss} onChangeText={setStopLoss} keyboardType="decimal-pad" placeholder="Optional" placeholderTextColor={colors.t3} />
-                  </View>
-                  {/* TP with pips */}
-                  <View style={styles.inputGroup}>
-                    <Text style={[styles.inputLabel, { color: colors.t2 }]}>Take Profit</Text>
-                    <TextInput style={[styles.input, { backgroundColor: colors.bg3, color: colors.t1, borderColor: colors.border }]} value={takeProfit} onChangeText={setTakeProfit} keyboardType="decimal-pad" placeholder="Optional" placeholderTextColor={colors.t3} />
-                  </View>
-                  {/* Submit */}
-                  <TouchableOpacity style={[styles.submitBtn, { backgroundColor: orderSide === 'buy' ? '#14b8a6' : '#ef4444', opacity: isPlacingOrder ? 0.6 : 1 }]} onPress={handlePlaceOrder} disabled={isPlacingOrder} activeOpacity={0.8}>
-                    {isPlacingOrder ? <ActivityIndicator color="#fff" size="small" /> : (
-                      <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>Open {orderSide === 'buy' ? 'BUY' : 'SELL'} Position</Text>
-                    )}
-                  </TouchableOpacity>
-                  <Text style={{ color: colors.t3, fontSize: 10, textAlign: 'center', marginTop: 6 }}>
-                    {(parseFloat(volume) || 0).toFixed(isOrderIndian ? 0 : 2)} lots @ {fmtP(orderSymbol, orderSide === 'buy' ? orderPrice?.ask : orderPrice?.bid, activeInstrument)}
-                  </Text>
-                </>
-              )}
 
               {/* ═══════════ NETTING MODE ═══════════ */}
               {tradingMode === 'netting' && (

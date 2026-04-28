@@ -23,10 +23,9 @@ function isIndianPos(pos: any): boolean {
   return false;
 }
 
-// Mode badge: N=Netting, H=Hedging, B=Binary
+// Mode badge: N=Netting, B=Binary
 const MODE_META: Record<string, { letter: string; color: string; bg: string }> = {
   netting: { letter: 'N', color: '#3b82f6', bg: 'rgba(59,130,246,0.15)' },
-  hedging: { letter: 'H', color: '#a855f7', bg: 'rgba(168,85,247,0.15)' },
   binary:  { letter: 'B', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
 };
 
