@@ -179,18 +179,47 @@ class SocketService {
     // explicit instrument the user added via Accelpix search. Same
     // {symbol, lastPrice, bid, ask, high, low, oi, volume, ...} shape
     // the service normalises in _handleTrade / _handleBest.
+    let _accelpixTickCount = 0;
     this.socket.on('accelpix-tick', (ticks: any[]) => {
-      if (Array.isArray(ticks)) {
-        ticks.forEach(t => {
-          const sym = t.symbol || t.ticker;
-          if (sym) {
-            this.priceCache[sym] = {
-              ...this.priceCache[sym],
-              ...t,
-              lastUpdated: Date.now(),
-            };
-          }
-        });
+      // Accept both array (normal payload) AND single-object form just
+      // in case the server ever emits a bare tick.
+      const tickArray = Array.isArray(ticks) ? ticks : [ticks];
+      let applied = 0;
+      tickArray.forEach(t => {
+        if (!t) return;
+        // Server emits with `symbol`. Some pix-apidata code paths use
+        // `ticker`. Normalise either to a single uppercase key so
+        // downstream lookups match regardless of casing.
+        const symRaw = t.symbol || t.ticker;
+        if (!symRaw) return;
+        const sym = String(symRaw).toUpperCase();
+        // Normalize the tick fields the UI reads from. Accelpix emits
+        // `lastPrice`/`last_price`/`ltp` interchangeably — make sure
+        // all three are populated so consumers reading any one variant
+        // see the latest value (the ...t spread last preserves any
+        // extra fields the server sent).
+        const ltp = Number(t.lastPrice ?? t.last_price ?? t.ltp ?? 0) || 0;
+        this.priceCache[sym] = {
+          ...this.priceCache[sym],
+          symbol: sym,
+          bid: Number(t.bid) || ltp || this.priceCache[sym]?.bid || 0,
+          ask: Number(t.ask) || ltp || this.priceCache[sym]?.ask || 0,
+          lastPrice: ltp || this.priceCache[sym]?.lastPrice || 0,
+          last_price: ltp || this.priceCache[sym]?.last_price || 0,
+          ltp: ltp || this.priceCache[sym]?.ltp || 0,
+          ...t,
+          lastUpdated: Date.now(),
+        };
+        applied++;
+      });
+      if (applied > 0) {
+        _accelpixTickCount += applied;
+        // Log once every ~50 ticks in dev so a steady stream is visible
+        // but we don't spam the dev console with every tick.
+        if (__DEV__ && (_accelpixTickCount % 50 === 1 || _accelpixTickCount <= 5)) {
+          const firstSym = tickArray[0]?.symbol || tickArray[0]?.ticker;
+          console.log(`[Socket] accelpix-tick #${_accelpixTickCount} (batch=${tickArray.length}, first=${firstSym})`);
+        }
         this.notifyPriceListeners();
       }
     });
