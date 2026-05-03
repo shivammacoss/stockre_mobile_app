@@ -38,15 +38,49 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const loadStoredUser = async () => {
     try {
-      // Always clear stored session on app launch — user must re-login
-      // each time the app is opened (matches web sessionStorage behavior).
-      await Promise.all([
-        SecureStore.deleteItemAsync('user'),
-        SecureStore.deleteItemAsync('authToken'),
+      // Restore the saved session on app launch so the user stays logged
+      // in across app exit / reopen. The token is a 7-day JWT (see
+      // server signToken); if it's expired or revoked, the request
+      // interceptor in services/api.ts clears it and forces re-login on
+      // the next API call.
+      const [storedToken, storedUser] = await Promise.all([
+        SecureStore.getItemAsync('authToken'),
+        SecureStore.getItemAsync('user'),
       ]);
-      setUser(null);
+      if (storedToken && storedUser) {
+        try {
+          const parsed = JSON.parse(storedUser);
+          if (parsed && parsed._id) {
+            setUser(parsed);
+            // Fire-and-forget refresh of the profile so any server-side
+            // changes (perms, balance, KYC status) show on this launch.
+            // Failure here doesn't kick the user out — the 401 path in
+            // the api interceptor handles auth invalidation centrally.
+            authAPI.getProfile()
+              .then((res) => {
+                if (res.data?.user) {
+                  setUser(res.data.user);
+                  SecureStore.setItemAsync('user', JSON.stringify(res.data.user)).catch(() => {});
+                }
+              })
+              .catch(() => { /* leave cached user in place */ });
+          } else {
+            setUser(null);
+          }
+        } catch {
+          // Corrupt stored payload — clear and force re-login.
+          await Promise.all([
+            SecureStore.deleteItemAsync('user'),
+            SecureStore.deleteItemAsync('authToken'),
+          ]);
+          setUser(null);
+        }
+      } else {
+        setUser(null);
+      }
     } catch (error) {
-      console.error('Error clearing stored user:', error);
+      console.error('Error loading stored user:', error);
+      setUser(null);
     } finally {
       setIsLoading(false);
     }

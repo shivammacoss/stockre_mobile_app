@@ -303,11 +303,18 @@ const OrdersScreen: React.FC = () => {
 
   const getData = () => tab === 'open' ? positions : tab === 'pending' ? pendingOrders : tab === 'history' ? history : cancelled;
 
-  // Live P/L from socket prices (same formula as web MarketPage calculateProfit)
+  // Live P/L from socket prices (same formula as web MarketPage calculateProfit).
+  // For each side we want the price that the user would close AT — bid for
+  // a long close, ask for a short close. If the live tick only carries a
+  // lastPrice (which happens for symbols whose depth hasn't arrived yet),
+  // use that instead of falling back to the server-snapshot pos.profit —
+  // pos.profit is computed against an older tick and causes visible
+  // flicker between "live" and "stale" values on the Orders screen.
   const calcLivePnl = (pos: any) => {
     const lp = prices[pos.symbol];
     if (!lp) return pos.profit || 0;
-    const current = pos.side === 'buy' ? (lp.bid || 0) : (lp.ask || 0);
+    const sideKey = pos.side === 'buy' ? 'bid' : 'ask';
+    const current = lp[sideKey] || lp.lastPrice || lp.last || 0;
     const entry = pos.avgPrice || pos.entryPrice || 0;
     if (!current || !entry) return pos.profit || 0;
     const diff = pos.side === 'buy' ? current - entry : entry - current;
@@ -351,7 +358,9 @@ const OrdersScreen: React.FC = () => {
   const renderCard = ({ item: pos, index }: { item: any; index: number }) => {
     const livePnl = tab === 'open' ? calcLivePnl(pos) : (pos.profit || 0);
     const lp = prices[pos.symbol];
-    const liveCurrentPrice = lp ? (pos.side === 'buy' ? (lp.bid || 0) : (lp.ask || 0)) : (pos.currentPrice || 0);
+    const liveCurrentPrice = lp
+      ? ((pos.side === 'buy' ? lp.bid : lp.ask) || lp.lastPrice || lp.last || pos.currentPrice || 0)
+      : (pos.currentPrice || 0);
     const mode = (pos.mode || 'netting').toLowerCase();
     const modeMeta = MODE_META[mode] || MODE_META.netting;
     const isNetting = mode === 'netting';
