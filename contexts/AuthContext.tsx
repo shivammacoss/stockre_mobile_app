@@ -55,7 +55,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (storedToken && storedUser) {
         try {
           const parsed = JSON.parse(storedUser);
-          if (parsed && parsed._id) {
+          // Accept any of _id / id / oderId as the identity gate.
+          // The login + profile responses ship `id` and `oderId` only
+          // (no `_id`), so checking `_id` alone falsely rejected every
+          // saved session on relaunch and forced re-login on every cold
+          // start.
+          const hasIdentity = parsed && (parsed._id || parsed.id || parsed.oderId);
+          if (hasIdentity) {
             setUser(parsed);
             // Refresh profile on launch. If the JWT has expired (7-day
             // TTL), the api response interceptor silently wipes the
