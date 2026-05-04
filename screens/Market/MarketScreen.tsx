@@ -12,6 +12,7 @@ import { useTheme } from '../../theme/ThemeContext';
 import { tradingAPI, instrumentsAPI, userAPI, walletAPI } from '../../services/api';
 import AppHeader from '../../components/AppHeader';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { useSegmentSettings } from '../../hooks/useSegmentSettings';
 
 const SW = Dimensions.get('window').width;
 const SH = Dimensions.get('window').height;
@@ -584,6 +585,19 @@ const MarketScreen: React.FC = () => {
         return;
       }
 
+      // Pre-trade segment check: enforce admin-set min lot, per-order
+      // cap, max lot per script, and segment-disabled flags before
+      // hitting the server. Mirrors web MarketPage validation.
+      if (tradingMode !== 'binary') {
+        const v = parseFloat(volume) || 0;
+        const r = validateLot(v);
+        if (!r.ok) {
+          Alert.alert('Cannot place order', r.message || 'Invalid lot size.');
+          setIsPlacingOrder(false);
+          return;
+        }
+      }
+
       if (tradingMode === 'binary') {
         await tradingAPI.placeOrder({
           userId: uid,
@@ -667,9 +681,27 @@ const MarketScreen: React.FC = () => {
 
   const activeLotSize = Number(activeInstrument?.lotSize) || 1;
   const isOrderIndian = isIndianSymbol(orderSymbol, activeInstrument);
-  // Stepper increment + floor for the lot input, per market type.
+
+  // Pull effective NettingSegment settings for the active symbol —
+  // admin-configured min lot / per-order lot / max lot caps + segment
+  // block flags. Without this the mobile ticket was using its own
+  // hardcoded min lot (1 / 0.01) and ignoring whatever the admin set
+  // (e.g. min lot 1 was bypassed by 0.1-lot orders).
+  const { settings: segmentSettings, validateLot } = useSegmentSettings(
+    orderSymbol,
+    activeInstrument,
+    user?.oderId,
+    tradingMode,
+  );
+
+  // Stepper increment + floor for the lot input. Admin's minLots wins
+  // when present; fall back to the per-market default.
   const lotStep = isOrderIndian ? 1 : 0.01;
-  const minLot = isOrderIndian ? 1 : 0.01;
+  const adminMinLot =
+    typeof segmentSettings?.minLots === 'number' && segmentSettings.minLots! > 0
+      ? Number(segmentSettings.minLots)
+      : null;
+  const minLot = adminMinLot ?? (isOrderIndian ? 1 : 0.01);
 
   const bal = Number(wallet?.balance || 0);
 

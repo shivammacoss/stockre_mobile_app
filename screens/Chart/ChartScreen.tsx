@@ -13,6 +13,7 @@ import { useTheme } from '../../theme/ThemeContext';
 import { tradingAPI, userAPI } from '../../services/api';
 import { API_URL, CHART_LIB_URL } from '../../config';
 import AppHeader from '../../components/AppHeader';
+import { useSegmentSettings } from '../../hooks/useSegmentSettings';
 
 const SW = Dimensions.get('window').width;
 const SH = Dimensions.get('window').height;
@@ -579,6 +580,17 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
     webViewRef.current?.injectJavaScript(`changeTheme('${theme}'); true;`);
   }, [isDark, chartReady]);
 
+  // Pull effective NettingSegment settings for the symbol on chart so
+  // the buy/sell action enforces admin-set min lot / per-order cap /
+  // max lot before hitting the engine. Mirrors the web MarketPage
+  // pre-trade validation.
+  const { validateLot: validateChartLot } = useSegmentSettings(
+    activeTab,
+    null,
+    user?.oderId,
+    tradingMode,
+  );
+
   const handlePlaceOrder = async () => {
     if (!user?.id && !user?.oderId) return;
     setIsPlacingOrder(true);
@@ -586,6 +598,16 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
       const uid = user?.oderId || user?.id || '';
       const p = prices[activeTab];
       const entryPrice = orderSide === 'buy' ? (p?.ask || 0) : (p?.bid || 0);
+
+      // Pre-trade segment guard — admin min lot / per-order / max lot.
+      if (tradingMode !== 'binary') {
+        const r = validateChartLot(parseFloat(volume) || 0);
+        if (!r.ok) {
+          Alert.alert('Cannot place order', r.message || 'Invalid lot size.');
+          setIsPlacingOrder(false);
+          return;
+        }
+      }
 
       if (tradingMode === 'binary') {
         await tradingAPI.placeOrder({
@@ -629,6 +651,16 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
     try {
       const uid = user?.oderId || user?.id || '';
       const p = prices[activeTab];
+
+      // Pre-trade segment guard — admin min lot / per-order / max lot.
+      if (tradingMode !== 'binary') {
+        const r = validateChartLot(parseFloat(volume) || 0);
+        if (!r.ok) {
+          Alert.alert('Cannot place order', r.message || 'Invalid lot size.');
+          return;
+        }
+      }
+
       await tradingAPI.placeOrder({
         userId: uid, symbol: activeTab, side,
         volume: parseFloat(volume) || 1,
