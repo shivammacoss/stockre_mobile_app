@@ -11,6 +11,7 @@ import { useSocket } from '../../contexts/SocketContext';
 import { useTheme } from '../../theme/ThemeContext';
 import { tradingAPI, walletAPI, bannerAPI } from '../../services/api';
 import AppHeader from '../../components/AppHeader';
+import { useSpreadCatalog } from '../../hooks/useSpreadCatalog';
 import { useNavigation } from '@react-navigation/native';
 
 const SW = Dimensions.get('window').width;
@@ -48,6 +49,12 @@ const HomeScreen: React.FC = () => {
   const [newsLoading, setNewsLoading] = useState(true);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastGoodMarginRef = useRef(0);
+
+  // Spread catalog (segment + per-script overrides) so Market Overview
+  // shows the same spread-adjusted bid/ask the order ticket trades on.
+  // Mirrors the web behaviour where every list price already includes
+  // the admin-configured spread.
+  const { applyToQuote: applySpreadFromCatalog } = useSpreadCatalog('netting');
 
   // ── Data loading ──
   const loadData = useCallback(async () => {
@@ -357,8 +364,11 @@ const HomeScreen: React.FC = () => {
             { sym: 'XAGUSD', label: 'Silver / USD', icon: 'ellipse-outline' as const, clr: '#94a3b8' },
           ].map((item, idx) => {
             const p = prices[item.sym];
-            const bid = n(p?.bid);
-            const ask = n(p?.ask);
+            const rawBid = n(p?.bid);
+            const rawAsk = n(p?.ask);
+            const adj = applySpreadFromCatalog(item.sym, null, rawBid, rawAsk);
+            const bid = adj.bid || rawBid;
+            const ask = adj.ask || rawAsk;
             const ch = n(p?.change);
             const isUp = ch >= 0;
             const decimals = item.sym.includes('XAU') || item.sym.includes('XAG') || item.sym.includes('BTC') ? 2 : item.sym.includes('JPY') ? 3 : 5;

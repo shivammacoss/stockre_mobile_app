@@ -13,6 +13,7 @@ import { tradingAPI, instrumentsAPI, userAPI, walletAPI } from '../../services/a
 import AppHeader from '../../components/AppHeader';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useSegmentSettings } from '../../hooks/useSegmentSettings';
+import { useSpreadCatalog } from '../../hooks/useSpreadCatalog';
 
 const SW = Dimensions.get('window').width;
 const SH = Dimensions.get('window').height;
@@ -745,14 +746,22 @@ const MarketScreen: React.FC = () => {
 
   const bal = Number(wallet?.balance || 0);
 
+  // Pre-fetch every segment + per-script spread once so the watchlist
+  // shows the same spread-adjusted bid/ask the order ticket trades on
+  // (web does this via UserLayout.segmentSpreads/scriptSpreads).
+  const { applyToQuote: applySpreadFromCatalog } = useSpreadCatalog(tradingMode);
+
   // ── INSTRUMENT ROW ──
   const renderInstrument = ({ item: inst }: { item: any }) => {
     const sym = inst.symbol || '';
     const name = inst.name || '';
     const p = prices[sym];
-    const bid = p?.bid || p?.lastPrice || p?.mark_price || 0;
-    const ask = p?.ask || p?.lastPrice || p?.mark_price || 0;
-    const spread = bid > 0 && ask > 0 ? Math.abs(ask - bid) : 0;
+    const rawBid = p?.bid || p?.lastPrice || p?.mark_price || 0;
+    const rawAsk = p?.ask || p?.lastPrice || p?.mark_price || 0;
+    const adj = applySpreadFromCatalog(sym, inst, rawBid, rawAsk);
+    const bid = adj.bid || rawBid;
+    const ask = adj.ask || rawAsk;
+    const spread = adj.spreadAmount > 0 ? adj.spreadAmount : (bid > 0 && ask > 0 ? Math.abs(ask - bid) : 0);
     const isFav = favourites.includes(sym);
     const isSearching = isIndianSegment && search.trim().length >= 2;
     const alreadyAdded = isIndianSegment && isInstrumentInSegment(sym);
