@@ -34,13 +34,12 @@ const MODE_META: Record<string, { letter: string; color: string; bg: string }> =
    Header → Date filters → 4-tab pill bar → Card list
    ================================================================ */
 
-type TabKey = 'open' | 'pending' | 'history' | 'cancelled' | 'weekly';
+type TabKey = 'open' | 'pending' | 'history' | 'cancelled';
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'open', label: 'Open' },
   { key: 'pending', label: 'Pending' },
   { key: 'history', label: 'History' },
   { key: 'cancelled', label: 'Cancelled' },
-  { key: 'weekly', label: 'Weekly' },
 ];
 
 const OrdersScreen: React.FC = () => {
@@ -484,14 +483,25 @@ const OrdersScreen: React.FC = () => {
         <Text style={{ color: colors.t3, fontSize: 11 }}>Manage your positions & history</Text>
       </View>
 
-      {/* Tab bar (matches web .orders-tabs pill segmented control) */}
+      {/* Tab bar (matches web .orders-tabs pill segmented control).
+          numberOfLines={1} on the inner Text + flexShrink on the pill
+          stops 'Cancelled (0)' from wrapping to a second line on
+          narrow phones. */}
       <View style={[styles.tabBar, { backgroundColor: colors.bg3, borderColor: colors.border }]}>
         {TABS.map(t => {
           const active = tab === t.key;
           const count = t.key === 'open' ? positions.length : t.key === 'pending' ? pendingOrders.length : t.key === 'history' ? history.length : cancelled.length;
           return (
-            <TouchableOpacity key={t.key} style={[styles.tabPill, active && { backgroundColor: colors.bg0 }]} onPress={() => setTab(t.key)}>
-              <Text style={{ color: active ? colors.t1 : colors.t3, fontSize: 11, fontWeight: active ? '700' : '500' }}>
+            <TouchableOpacity
+              key={t.key}
+              style={[styles.tabPill, { flex: 1, minWidth: 0 }, active && { backgroundColor: colors.bg0 }]}
+              onPress={() => setTab(t.key)}
+            >
+              <Text
+                numberOfLines={1}
+                ellipsizeMode="clip"
+                style={{ color: active ? colors.t1 : colors.t3, fontSize: 11, fontWeight: active ? '700' : '500', textAlign: 'center' }}
+              >
                 {t.label} ({count})
               </Text>
             </TouchableOpacity>
@@ -530,10 +540,8 @@ const OrdersScreen: React.FC = () => {
         </View>
       )}
 
-      {/* Card list / weekly report */}
-      {tab === 'weekly' ? (
-        <WeeklySettlementMobile userId={user?.oderId} />
-      ) : (
+      {/* Card list */}
+      {(
         <FlatList
           data={getData()}
           renderItem={renderCard}
