@@ -695,13 +695,28 @@ const MarketScreen: React.FC = () => {
   );
 
   // Stepper increment + floor for the lot input. Admin's minLots wins
-  // when present; fall back to the per-market default.
-  const lotStep = isOrderIndian ? 1 : 0.01;
+  // when present; fall back to the per-market default. The stepper
+  // increment also tracks minLots so admins setting a fractional min
+  // (e.g. 0.3) can actually be reached from the +/- buttons — without
+  // this the Indian-default step of 1 would skip past 0.3 → 1.3.
   const adminMinLot =
     typeof segmentSettings?.minLots === 'number' && segmentSettings.minLots! > 0
       ? Number(segmentSettings.minLots)
       : null;
+  const defaultLotStep = isOrderIndian ? 1 : 0.01;
+  const lotStep = adminMinLot != null && adminMinLot < defaultLotStep ? adminMinLot : defaultLotStep;
   const minLot = adminMinLot ?? (isOrderIndian ? 1 : 0.01);
+
+  // Snap the lot input up to the admin minimum once segment settings
+  // load. openOrderSheet defaulted to 1 / 0.01; if admin set min 0.3,
+  // we want the ticket to start at 0.3 not 1. Only snaps on increase
+  // so the user's typed value isn't overwritten downward.
+  useEffect(() => {
+    if (!minLot || minLot <= 0) return;
+    const cur = parseFloat(volume) || 0;
+    if (cur < minLot) setVolume(String(minLot));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [minLot]);
 
   const bal = Number(wallet?.balance || 0);
 

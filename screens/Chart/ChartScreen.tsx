@@ -584,12 +584,27 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
   // the buy/sell action enforces admin-set min lot / per-order cap /
   // max lot before hitting the engine. Mirrors the web MarketPage
   // pre-trade validation.
-  const { validateLot: validateChartLot } = useSegmentSettings(
+  const { settings: chartSegmentSettings, validateLot: validateChartLot } = useSegmentSettings(
     activeTab,
     null,
     user?.oderId,
     tradingMode,
   );
+
+  // Snap the chart's lot input up to the admin minimum (e.g. min 0.3)
+  // once segment settings load. The chart's volume stepper hardcodes
+  // 0.01 increments, which would otherwise let users keep a value
+  // below the admin's setting until the server rejected it.
+  useEffect(() => {
+    const adminMin =
+      typeof chartSegmentSettings?.minLots === 'number' && chartSegmentSettings.minLots! > 0
+        ? Number(chartSegmentSettings.minLots)
+        : null;
+    if (!adminMin) return;
+    const cur = parseFloat(volume) || 0;
+    if (cur < adminMin) setVolume(String(adminMin));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chartSegmentSettings?.minLots]);
 
   const handlePlaceOrder = async () => {
     if (!user?.id && !user?.oderId) return;
