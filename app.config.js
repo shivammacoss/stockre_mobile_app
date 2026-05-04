@@ -3,11 +3,11 @@ import 'dotenv/config';
 export default {
   expo: {
     name: "Stocktre",
-    // Slug is an internal Expo identifier tied to the existing projectId
-    // (created pre-whitelabel as Stock4xExpo). Cannot be changed without
-    // issuing a new projectId + breaking OTA updates. User-facing name,
-    // bundleId, and package all show `Stocktre`.
-    slug: "Stock4xExpo",
+    // Wired to the `shivam92388` Expo account (project: stocktre-app,
+    // id 57a176af-0c49-478c-940f-e703909a3ac7). Bumping or rotating the
+    // project requires updating slug + projectId + updates.url + owner
+    // together — they all reference the same Expo project.
+    slug: "stocktre-app",
     version: "1.0.0",
     orientation: "portrait",
     icon: "./assets/app-icon.png",
@@ -23,7 +23,7 @@ export default {
       enabled: true,
       checkAutomatically: "ON_LOAD",
       fallbackToCacheTimeout: 0,
-      url: "https://u.expo.dev/afe771a2-0b1a-4a4f-98b5-3bfbc5721796",
+      url: "https://u.expo.dev/57a176af-0c49-478c-940f-e703909a3ac7",
       requestHeaders: {
         "expo-channel-name": process.env.EXPO_UPDATES_CHANNEL || "preview",
       },
@@ -65,9 +65,9 @@ export default {
       appName: process.env.APP_NAME || "Stocktre",
       appVersion: process.env.APP_VERSION || "1.0.0",
       eas: {
-        projectId: "afe771a2-0b1a-4a4f-98b5-3bfbc5721796",
+        projectId: "57a176af-0c49-478c-940f-e703909a3ac7",
       },
     },
-    owner: "stockre",
+    owner: "shivam92388",
   },
 };
