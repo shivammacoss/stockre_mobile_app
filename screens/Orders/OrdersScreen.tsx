@@ -115,18 +115,20 @@ const OrdersScreen: React.FC = () => {
   const loadData = async () => {
     if (!user?.id && !user?.oderId) return;
     const uid = user?.oderId || user?.id;
-    try {
-      const [posRes, pendRes, histRes, walRes] = await Promise.all([
-        tradingAPI.getAllPositions(uid),
-        tradingAPI.getPendingOrders(uid),
-        tradingAPI.getTradeHistory(uid),
-        walletAPI.getUserWallet(uid),
-      ]);
-      if (posRes.data?.positions) setPositions(posRes.data.positions);
-      if (pendRes.data?.orders) setPendingOrders(pendRes.data.orders);
-      if (histRes.data?.trades) setHistory(histRes.data.trades);
-      if (walRes.data?.wallet) setWallet(walRes.data.wallet);
-    } catch (_) {}
+    // Each call gets its own catch — a single failure (e.g. an empty
+    // positions endpoint that 4xx's) used to take Promise.all down with
+    // it, leaving wallet.balance at the initial 0 and the ledger card
+    // showing ₹0.00 even though the user actually has funds.
+    const [posRes, pendRes, histRes, walRes] = await Promise.all([
+      tradingAPI.getAllPositions(uid).catch(() => null),
+      tradingAPI.getPendingOrders(uid).catch(() => null),
+      tradingAPI.getTradeHistory(uid).catch(() => null),
+      walletAPI.getUserWallet(uid).catch(() => null),
+    ]);
+    if (posRes?.data?.positions) setPositions(posRes.data.positions);
+    if (pendRes?.data?.orders) setPendingOrders(pendRes.data.orders);
+    if (histRes?.data?.trades) setHistory(histRes.data.trades);
+    if (walRes?.data?.wallet) setWallet(walRes.data.wallet);
   };
 
   const onRefresh = async () => { setRefreshing(true); await loadData(); setRefreshing(false); };
