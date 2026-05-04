@@ -190,9 +190,11 @@ export const tradingAPI = {
   closePositionLeg: (data: { userId: string; tradeId: string; currentPrice: number; closeReason?: string }) =>
     api.post('/api/positions/close-leg', data),
 
-  // Modify SL/TP on a position
-  modifyPosition: (data: { userId: string; symbol: string; positionId?: string; stopLoss?: number; takeProfit?: number; mode?: string }) =>
-    api.post('/api/positions/modify', data),
+  // Modify SL/TP on a position. Server registers this as PUT — POST
+  // (the previous spelling) silently 404s and SL/TP edits never land.
+  // Also: server requires `mode` ('netting' / 'binary') in the body.
+  modifyPosition: (data: { userId: string; symbol: string; positionId?: string; stopLoss?: number | null; takeProfit?: number | null; mode?: string }) =>
+    api.put('/api/positions/modify', data),
 
   // Cancel pending order (alias)
   cancelPendingOrder: (data: { userId: string; orderId: string; mode?: string }) =>
@@ -206,9 +208,11 @@ export const tradingAPI = {
   getTradeGroup: (userId: string, groupId: string) =>
     api.get(`/api/trades/group/${userId}/${encodeURIComponent(groupId)}`),
 
-  // Update per-leg SL/TP (netting mode, active legs only)
+  // Update per-leg SL/TP (netting mode, active legs only). Server route
+  // is /api/user/trades/:tradeId/sltp — the previous /api/trades/legs/
+  // path 404'd silently and per-leg SL/TP edits never landed.
   updateTradeLeg: (tradeId: string, data: { userId: string; stopLoss: number | null; takeProfit: number | null }) =>
-    api.put(`/api/trades/legs/${tradeId}`, data),
+    api.put(`/api/user/trades/${tradeId}/sltp`, data),
 };
 
 // ═══ Wallet ═══

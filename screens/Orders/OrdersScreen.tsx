@@ -145,12 +145,17 @@ const OrdersScreen: React.FC = () => {
     setEditLoading(true);
     try {
       const uid = user?.oderId || user?.id || '';
+      // mode is required by the server's PUT /api/positions/modify
+      // switch — without it we'd 400 with 'Invalid mode for modify'.
+      // Sending null (not undefined) on empty input lets the engine
+      // explicitly clear SL/TP; undefined would be skipped server-side.
       await tradingAPI.modifyPosition({
         userId: uid,
         positionId: editingPos.oderId || editingPos._id,
         symbol: editingPos.symbol,
-        stopLoss: editSL ? parseFloat(editSL) : undefined,
-        takeProfit: editTP ? parseFloat(editTP) : undefined,
+        mode: editingPos.mode || 'netting',
+        stopLoss: editSL === '' ? null : parseFloat(editSL),
+        takeProfit: editTP === '' ? null : parseFloat(editTP),
       });
       setEditModalOpen(false);
       loadData();
