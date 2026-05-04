@@ -584,7 +584,7 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
   // the buy/sell action enforces admin-set min lot / per-order cap /
   // max lot before hitting the engine. Mirrors the web MarketPage
   // pre-trade validation.
-  const { settings: chartSegmentSettings, validateLot: validateChartLot } = useSegmentSettings(
+  const { settings: chartSegmentSettings, validateLot: validateChartLot, adjustQuote: adjustChartQuote } = useSegmentSettings(
     activeTab,
     null,
     user?.oderId,
@@ -606,13 +606,30 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chartSegmentSettings?.minLots]);
 
+  // Spread-adjusted quote for the active chart symbol — matches the
+  // user-visible BUY/SELL cards. Indian Zerodha ticks have bid==ask==
+  // LTP, so without this the engine added the segment spread on top
+  // and the position opened at a price different from the displayed
+  // bid/ask.
+  const chartTradeQuote = (() => {
+    const p = prices[activeTab];
+    const rawBid = Number(p?.bid || p?.lastPrice || 0);
+    const rawAsk = Number(p?.ask || p?.lastPrice || 0);
+    if (rawBid <= 0 && rawAsk <= 0) return { bid: rawBid, ask: rawAsk, spreadAmount: 0 };
+    return adjustChartQuote(rawBid, rawAsk);
+  })();
+
   const handlePlaceOrder = async () => {
     if (!user?.id && !user?.oderId) return;
     setIsPlacingOrder(true);
     try {
       const uid = user?.oderId || user?.id || '';
       const p = prices[activeTab];
-      const entryPrice = orderSide === 'buy' ? (p?.ask || 0) : (p?.bid || 0);
+      const rawBid = Number(p?.bid || p?.lastPrice || 0);
+      const rawAsk = Number(p?.ask || p?.lastPrice || 0);
+      const adjusted =
+        rawBid > 0 || rawAsk > 0 ? adjustChartQuote(rawBid, rawAsk) : { bid: rawBid, ask: rawAsk, spreadAmount: 0 };
+      const entryPrice = orderSide === 'buy' ? (adjusted.ask || 0) : (adjusted.bid || 0);
 
       // Pre-trade segment guard — admin min lot / per-order / max lot.
       if (tradingMode !== 'binary') {
@@ -631,9 +648,9 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
           side: binaryDirection,
           volume: parseFloat(binaryAmount) || 100,
           orderType: 'market',
-          price: p?.bid || 0,
+          price: adjusted.bid || 0,
           mode: 'binary',
-          marketData: { bid: p?.bid || 0, ask: p?.ask || 0 },
+          marketData: { bid: adjusted.bid || 0, ask: adjusted.ask || 0 },
           session: `${binaryExpiry}`,
         } as any);
         const expiryLabel = binaryExpiry >= 60 ? `${Math.floor(binaryExpiry / 60)}m` : `${binaryExpiry}s`;
@@ -649,8 +666,9 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
           stopLoss: stopLoss ? parseFloat(stopLoss) : undefined,
           takeProfit: takeProfit ? parseFloat(takeProfit) : undefined,
           mode: tradingMode,
-          marketData: { bid: p?.bid || 0, ask: p?.ask || 0 },
-        });
+          marketData: { bid: adjusted.bid || 0, ask: adjusted.ask || 0 },
+          spreadPreApplied: orderType === 'market',
+        } as any);
         Alert.alert('Success', `${orderSide.toUpperCase()} ${volume} lots ${activeTab} placed`);
       }
       closeSheet();
@@ -666,6 +684,10 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
     try {
       const uid = user?.oderId || user?.id || '';
       const p = prices[activeTab];
+      const rawBid = Number(p?.bid || p?.lastPrice || 0);
+      const rawAsk = Number(p?.ask || p?.lastPrice || 0);
+      const adjusted =
+        rawBid > 0 || rawAsk > 0 ? adjustChartQuote(rawBid, rawAsk) : { bid: rawBid, ask: rawAsk, spreadAmount: 0 };
 
       // Pre-trade segment guard — admin min lot / per-order / max lot.
       if (tradingMode !== 'binary') {
@@ -680,10 +702,11 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
         userId: uid, symbol: activeTab, side,
         volume: parseFloat(volume) || 1,
         orderType: 'market',
-        price: side === 'buy' ? (p?.ask || 0) : (p?.bid || 0),
+        price: side === 'buy' ? (adjusted.ask || 0) : (adjusted.bid || 0),
         mode: tradingMode,
-        marketData: { bid: p?.bid || 0, ask: p?.ask || 0 },
-      });
+        marketData: { bid: adjusted.bid || 0, ask: adjusted.ask || 0 },
+        spreadPreApplied: true,
+      } as any);
       Alert.alert('Success', `${side.toUpperCase()} ${volume} lots ${activeTab}`);
     } catch (e: any) {
       Alert.alert('Error', e?.response?.data?.error || e.message);
@@ -846,7 +869,7 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
             activeOpacity={0.8}
           >
             <Text style={styles.tradeLbl}>SELL</Text>
-            <Text style={styles.tradePrice}>{fmtP(activeTab, currentPrice?.bid)}</Text>
+            <Text style={styles.tradePrice}>{fmtP(activeTab, chartTradeQuote.bid || currentPrice?.bid)}</Text>
           </TouchableOpacity>
           <View style={[styles.lotBox, { backgroundColor: colors.bg3, borderColor: colors.border }]}>
             <Text style={{ color: colors.t3, fontSize: 8, fontWeight: '600' }}>LOTS</Text>
@@ -863,7 +886,7 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
             activeOpacity={0.8}
           >
             <Text style={styles.tradeLbl}>BUY</Text>
-            <Text style={styles.tradePrice}>{fmtP(activeTab, currentPrice?.ask)}</Text>
+            <Text style={styles.tradePrice}>{fmtP(activeTab, chartTradeQuote.ask || currentPrice?.ask)}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -896,11 +919,11 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
               <View style={{ flexDirection: 'row', gap: 12 }}>
                 <View style={{ alignItems: 'flex-end' }}>
                   <Text style={{ color: colors.t3, fontSize: 9 }}>BID</Text>
-                  <Text style={{ color: '#ef4444', fontSize: 14, fontWeight: '700' }}>{fmtP(activeTab, currentPrice?.bid)}</Text>
+                  <Text style={{ color: '#ef4444', fontSize: 14, fontWeight: '700' }}>{fmtP(activeTab, chartTradeQuote.bid || currentPrice?.bid)}</Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
                   <Text style={{ color: colors.t3, fontSize: 9 }}>ASK</Text>
-                  <Text style={{ color: '#22c55e', fontSize: 14, fontWeight: '700' }}>{fmtP(activeTab, currentPrice?.ask)}</Text>
+                  <Text style={{ color: '#22c55e', fontSize: 14, fontWeight: '700' }}>{fmtP(activeTab, chartTradeQuote.ask || currentPrice?.ask)}</Text>
                 </View>
               </View>
             </View>
@@ -933,12 +956,12 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
                   <TouchableOpacity style={[styles.sideBtn, { backgroundColor: orderSide === 'sell' ? '#ef4444' : 'rgba(239,68,68,0.12)', borderColor: '#ef4444' }]} onPress={() => setOrderSide('sell')}>
                     <Text style={{ color: orderSide === 'sell' ? '#fff' : '#ef4444', fontSize: 11, fontWeight: '600' }}>SELL</Text>
-                    <Text style={{ color: orderSide === 'sell' ? '#fff' : '#ef4444', fontSize: 16, fontWeight: '700' }}>{fmtP(activeTab, currentPrice?.bid)}</Text>
+                    <Text style={{ color: orderSide === 'sell' ? '#fff' : '#ef4444', fontSize: 16, fontWeight: '700' }}>{fmtP(activeTab, chartTradeQuote.bid || currentPrice?.bid)}</Text>
                   </TouchableOpacity>
-                  <Text style={{ color: colors.t3, fontSize: 11 }}>{currentPrice?.bid && currentPrice?.ask ? Math.abs(currentPrice.ask - currentPrice.bid).toFixed(2) : '0.00'}</Text>
+                  <Text style={{ color: colors.t3, fontSize: 11 }}>{chartTradeQuote.spreadAmount > 0 ? chartTradeQuote.spreadAmount.toFixed(2) : (currentPrice?.bid && currentPrice?.ask ? Math.abs(currentPrice.ask - currentPrice.bid).toFixed(2) : '0.00')}</Text>
                   <TouchableOpacity style={[styles.sideBtn, { backgroundColor: orderSide === 'buy' ? '#22c55e' : 'rgba(34,197,94,0.12)', borderColor: '#22c55e' }]} onPress={() => setOrderSide('buy')}>
                     <Text style={{ color: orderSide === 'buy' ? '#fff' : '#22c55e', fontSize: 11, fontWeight: '600' }}>BUY</Text>
-                    <Text style={{ color: orderSide === 'buy' ? '#fff' : '#22c55e', fontSize: 16, fontWeight: '700' }}>{fmtP(activeTab, currentPrice?.ask)}</Text>
+                    <Text style={{ color: orderSide === 'buy' ? '#fff' : '#22c55e', fontSize: 16, fontWeight: '700' }}>{fmtP(activeTab, chartTradeQuote.ask || currentPrice?.ask)}</Text>
                   </TouchableOpacity>
                 </View>
                 {orderType !== 'market' && (
@@ -965,7 +988,7 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
                 </TouchableOpacity>
                 {showTP && <TextInput style={[styles.input, { backgroundColor: colors.bg3, color: colors.t1, borderColor: colors.border, marginBottom: 10 }]} value={takeProfit} onChangeText={setTakeProfit} keyboardType="decimal-pad" placeholder="Optional" placeholderTextColor={colors.t3} />}
                 {(() => {
-                  const ep = orderSide === 'buy' ? (currentPrice?.ask || 0) : (currentPrice?.bid || 0);
+                  const ep = orderSide === 'buy' ? (chartTradeQuote.ask || currentPrice?.ask || 0) : (chartTradeQuote.bid || currentPrice?.bid || 0);
                   const vol = parseFloat(volume) || 0;
                   const notional = ep * vol;
                   const cfm = notional > 0 ? `₹${notional.toFixed(2)}` : '—';
@@ -980,14 +1003,14 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
                 <TouchableOpacity style={[styles.submitBtn, { backgroundColor: orderSide === 'buy' ? '#14b8a6' : '#ef4444', opacity: isPlacingOrder ? 0.6 : 1 }]} onPress={handlePlaceOrder} disabled={isPlacingOrder} activeOpacity={0.8}>
                   {isPlacingOrder ? <ActivityIndicator color="#fff" size="small" /> : <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>{orderSide === 'buy' ? 'BUY' : 'SELL'} {(parseFloat(volume) || 0).toFixed(2)} lots</Text>}
                 </TouchableOpacity>
-                <Text style={{ color: colors.t3, fontSize: 10, textAlign: 'center', marginTop: 6 }}>{(parseFloat(volume) || 0).toFixed(2)} lots @ {fmtP(activeTab, orderSide === 'buy' ? currentPrice?.ask : currentPrice?.bid)} (intraday)</Text>
+                <Text style={{ color: colors.t3, fontSize: 10, textAlign: 'center', marginTop: 6 }}>{(parseFloat(volume) || 0).toFixed(2)} lots @ {fmtP(activeTab, orderSide === 'buy' ? (chartTradeQuote.ask || currentPrice?.ask) : (chartTradeQuote.bid || currentPrice?.bid))} (intraday)</Text>
               </>)}
 
               {/* ═══ BINARY ═══ */}
               {tradingMode === 'binary' && (<>
                 <View style={{ backgroundColor: colors.bg3, borderRadius: 12, padding: 16, alignItems: 'center', marginBottom: 16 }}>
                   <Text style={{ color: colors.t2, fontSize: 12, marginBottom: 4 }}>Current Price</Text>
-                  <Text style={{ color: colors.t1, fontSize: 28, fontWeight: '800' }}>{fmtP(activeTab, currentPrice?.bid)}</Text>
+                  <Text style={{ color: colors.t1, fontSize: 28, fontWeight: '800' }}>{fmtP(activeTab, chartTradeQuote.bid || currentPrice?.bid)}</Text>
                 </View>
                 <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
                   <TouchableOpacity style={[styles.sideBtn, { flex: 1, paddingVertical: 24, backgroundColor: binaryDirection === 'up' ? '#14b8a6' : 'rgba(20,184,166,0.15)', borderColor: '#14b8a6' }]} onPress={() => setBinaryDirection('up')}>

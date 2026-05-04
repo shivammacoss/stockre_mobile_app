@@ -118,6 +118,35 @@ const CASH_EQ_CODES = new Set<SegmentCode>(['NSE_EQ', 'BSE_EQ']);
  * the resolved segment OR the symbol changes. Returns null while loading or
  * if the segment is unresolved.
  */
+/**
+ * Mirror of the web's applySegmentSpread (UserLayout.jsx). Takes the
+ * raw bid/ask coming off the WS tick and returns the spread-adjusted
+ * pair the user should actually see + trade on. Without this the
+ * mobile order ticket showed Zerodha's raw LTP-as-bid-ask while the
+ * server applied an admin-configured spread on top — the position
+ * opened at a price different from what was shown.
+ */
+export function applySegmentSpread(
+  rawBid: number,
+  rawAsk: number,
+  settings: SegmentSettings | null | undefined,
+): { bid: number; ask: number; spreadAmount: number } {
+  if (rawBid <= 0 && rawAsk <= 0) return { bid: rawBid, ask: rawAsk, spreadAmount: 0 };
+  const spreadPips = Number(settings?.spreadPips) || 0;
+  if (spreadPips <= 0) {
+    return { bid: rawBid, ask: rawAsk, spreadAmount: Math.abs(rawAsk - rawBid) };
+  }
+  const st = String(settings?.spreadType || 'fixed').toLowerCase();
+  const mid = (rawBid + rawAsk) / 2 || rawBid || rawAsk;
+  let applied = spreadPips;
+  if (st === 'floating') {
+    const natural = Math.abs(rawAsk - rawBid);
+    applied = Math.max(spreadPips, natural);
+  }
+  const half = applied / 2;
+  return { bid: mid - half, ask: mid + half, spreadAmount: applied };
+}
+
 export function useSegmentSettings(
   symbol: string | null | undefined,
   instrument: any = {},
@@ -128,6 +157,7 @@ export function useSegmentSettings(
   settings: SegmentSettings | null;
   loading: boolean;
   validateLot: (volume: number) => { ok: boolean; message?: string };
+  adjustQuote: (rawBid: number, rawAsk: number) => { bid: number; ask: number; spreadAmount: number };
 } {
   const segment = resolveSegmentCode(symbol || null, instrument || {});
   const [settings, setSettings] = useState<SegmentSettings | null>(null);
@@ -198,5 +228,8 @@ export function useSegmentSettings(
     return { ok: true };
   };
 
-  return { segment, settings, loading, validateLot };
+  const adjustQuote = (rawBid: number, rawAsk: number) =>
+    applySegmentSpread(rawBid, rawAsk, settings);
+
+  return { segment, settings, loading, validateLot, adjustQuote };
 }

@@ -571,7 +571,14 @@ const MarketScreen: React.FC = () => {
       //               (populated from OptionChain REST /quote for options
       //               that aren't on the WS feed)
       const p = prices[orderSymbol] || seedPrices[orderSymbol] || null;
-      const entryPrice = orderSide === 'buy' ? Number(p?.ask || 0) : Number(p?.bid || 0);
+      // Use the spread-adjusted quote the user actually saw on the
+      // BUY / SELL cards. Server gets `spreadPreApplied: true` below
+      // so it doesn't add the spread a second time.
+      const rawBid = Number(p?.bid || p?.lastPrice || 0);
+      const rawAsk = Number(p?.ask || p?.lastPrice || 0);
+      const adjusted =
+        rawBid > 0 || rawAsk > 0 ? adjustQuote(rawBid, rawAsk) : { bid: rawBid, ask: rawAsk, spreadAmount: 0 };
+      const entryPrice = orderSide === 'buy' ? Number(adjusted.ask || 0) : Number(adjusted.bid || 0);
 
       // Strict guard — reject before any network call if the price the
       // user would trade at is missing/zero. Keeps behaviour identical
@@ -605,9 +612,9 @@ const MarketScreen: React.FC = () => {
           side: binaryDirection,
           volume: parseFloat(binaryAmount) || 100,
           orderType: 'market',
-          price: p?.bid || 0,
+          price: adjusted.bid || 0,
           mode: 'binary',
-          marketData: { bid: p?.bid || 0, ask: p?.ask || 0 },
+          marketData: { bid: adjusted.bid || 0, ask: adjusted.ask || 0 },
           session: `${binaryExpiry}`,
         } as any);
         const expiryLabel = binaryExpiry >= 60 ? `${Math.floor(binaryExpiry / 60)}m` : `${binaryExpiry}s`;
@@ -645,8 +652,13 @@ const MarketScreen: React.FC = () => {
           exchange: fnoExchange,
           segment: fnoSegment,
           lotSize: activeLotSize,
-          marketData: { bid: p?.bid || 0, ask: p?.ask || 0 },
-        });
+          // Send the same bid/ask the user saw on the cards. For market
+          // orders flag `spreadPreApplied: true` so the engine doesn't
+          // re-apply the segment spread on top of an already-adjusted
+          // entry price (matches web MarketPage).
+          marketData: { bid: adjusted.bid || 0, ask: adjusted.ask || 0 },
+          spreadPreApplied: orderType === 'market',
+        } as any);
         Alert.alert('Success', `${orderSide.toUpperCase()} ${volume} lots ${orderSymbol} placed`);
       }
       closeSheet();
@@ -687,7 +699,7 @@ const MarketScreen: React.FC = () => {
   // block flags. Without this the mobile ticket was using its own
   // hardcoded min lot (1 / 0.01) and ignoring whatever the admin set
   // (e.g. min lot 1 was bypassed by 0.1-lot orders).
-  const { settings: segmentSettings, validateLot } = useSegmentSettings(
+  const { settings: segmentSettings, validateLot, adjustQuote } = useSegmentSettings(
     orderSymbol,
     activeInstrument,
     user?.oderId,
@@ -717,6 +729,19 @@ const MarketScreen: React.FC = () => {
     if (cur < minLot) setVolume(String(minLot));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [minLot]);
+
+  // Spread-adjusted bid/ask the user actually sees and trades on.
+  // Mirrors web UserLayout.applySegmentSpread: mid ± half(spread). The
+  // raw Zerodha tick has bid==ask==LTP for Indian instruments, so
+  // without this every Indian order opened at the server's
+  // post-spread price (different from what the ticket displayed).
+  const tradeQuote = useMemo(() => {
+    const rawBid = Number(orderPrice?.bid || orderPrice?.lastPrice || 0);
+    const rawAsk = Number(orderPrice?.ask || orderPrice?.lastPrice || 0);
+    if (rawBid <= 0 && rawAsk <= 0) return { bid: rawBid, ask: rawAsk, spreadAmount: 0 };
+    return adjustQuote(rawBid, rawAsk);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderPrice?.bid, orderPrice?.ask, orderPrice?.lastPrice, segmentSettings?.spreadPips, segmentSettings?.spreadType]);
 
   const bal = Number(wallet?.balance || 0);
 
@@ -989,13 +1014,13 @@ const MarketScreen: React.FC = () => {
                 >
                   <Text style={{ color: orderSide === 'sell' ? '#fff' : '#ef4444', fontSize: 11, fontWeight: '700', letterSpacing: 0.6 }}>SELL</Text>
                   <Text style={{ color: orderSide === 'sell' ? '#fff' : '#ef4444', fontSize: 18, fontWeight: '800', marginTop: 3 }}>
-                    {fmtP(orderSymbol, orderPrice?.bid, activeInstrument)}
+                    {fmtP(orderSymbol, tradeQuote.bid || orderPrice?.bid, activeInstrument)}
                   </Text>
                 </TouchableOpacity>
                 <View style={[styles.spreadChip, { backgroundColor: colors.bg3, borderColor: colors.border }]}>
                   <Text style={{ color: colors.t3, fontSize: 8, fontWeight: '700', letterSpacing: 0.4 }}>SPRD</Text>
                   <Text style={{ color: colors.t2, fontSize: 11, fontWeight: '700' }}>
-                    {orderPrice?.bid && orderPrice?.ask ? Math.abs(orderPrice.ask - orderPrice.bid).toFixed(2) : '—'}
+                    {tradeQuote.spreadAmount > 0 ? tradeQuote.spreadAmount.toFixed(2) : (orderPrice?.bid && orderPrice?.ask ? Math.abs(orderPrice.ask - orderPrice.bid).toFixed(2) : '—')}
                   </Text>
                 </View>
                 <TouchableOpacity
@@ -1008,7 +1033,7 @@ const MarketScreen: React.FC = () => {
                 >
                   <Text style={{ color: orderSide === 'buy' ? '#fff' : '#22c55e', fontSize: 11, fontWeight: '700', letterSpacing: 0.6 }}>BUY</Text>
                   <Text style={{ color: orderSide === 'buy' ? '#fff' : '#22c55e', fontSize: 18, fontWeight: '800', marginTop: 3 }}>
-                    {fmtP(orderSymbol, orderPrice?.ask, activeInstrument)}
+                    {fmtP(orderSymbol, tradeQuote.ask || orderPrice?.ask, activeInstrument)}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -1125,7 +1150,7 @@ const MarketScreen: React.FC = () => {
                   {showTP && <TextInput style={[styles.input, { backgroundColor: colors.bg3, color: colors.t1, borderColor: colors.border, marginBottom: 8 }]} value={takeProfit} onChangeText={setTakeProfit} keyboardType="decimal-pad" placeholder="Optional" placeholderTextColor={colors.t3} />}
                   {/* Margin info card */}
                   {(() => {
-                    const ep = orderSide === 'buy' ? (orderPrice?.ask || 0) : (orderPrice?.bid || 0);
+                    const ep = orderSide === 'buy' ? (tradeQuote.ask || orderPrice?.ask || 0) : (tradeQuote.bid || orderPrice?.bid || 0);
                     const vol = parseFloat(volume) || 0;
                     const notional = ep * vol;
                     const intraday = notional > 0 ? `₹${notional.toFixed(2)}` : '—';
@@ -1162,7 +1187,7 @@ const MarketScreen: React.FC = () => {
                     )}
                   </TouchableOpacity>
                   <Text style={{ color: colors.t3, fontSize: 10, textAlign: 'center', marginTop: 6 }}>
-                    {(parseFloat(volume) || 0).toFixed(isOrderIndian ? 0 : 2)} lots @ {fmtP(orderSymbol, orderSide === 'buy' ? orderPrice?.ask : orderPrice?.bid, activeInstrument)} (intraday)
+                    {(parseFloat(volume) || 0).toFixed(isOrderIndian ? 0 : 2)} lots @ {fmtP(orderSymbol, orderSide === 'buy' ? (tradeQuote.ask || orderPrice?.ask) : (tradeQuote.bid || orderPrice?.bid), activeInstrument)} (intraday)
                   </Text>
                 </>
               )}
