@@ -29,6 +29,7 @@ export function useOTAUpdate(options?: { silentOnStartup?: boolean }) {
         try {
           await Updates.fetchUpdateAsync();
           if (showAlerts) {
+            // User-initiated path: ask before disrupting the session.
             Alert.alert(
               'Update Available',
               'A new version of Stocktre is ready. Restart to apply?',
@@ -37,6 +38,15 @@ export function useOTAUpdate(options?: { silentOnStartup?: boolean }) {
                 { text: 'Restart', onPress: () => Updates.reloadAsync() },
               ]
             );
+          } else {
+            // Silent startup path: previously the new bundle stayed
+            // staged until the next-next cold start, so users reported
+            // 'OTA update not showing in preview'. Reload immediately
+            // so the just-fetched bundle is the one the app actually
+            // runs. We only hit this branch on app launch (silent
+            // useEffect call) — never mid-session — so the reload feels
+            // like a one-extra-second startup, not a jarring restart.
+            try { await Updates.reloadAsync(); } catch { /* no-op */ }
           }
         } catch (fetchErr: any) {
           if (showAlerts) Alert.alert('Download failed', fetchErr?.message || 'Could not download update');

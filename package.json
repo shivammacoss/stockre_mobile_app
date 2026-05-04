@@ -6,7 +6,9 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "ota:preview": "eas update --branch preview --message \"$(git log -1 --pretty=%s)\"",
+    "ota:production": "eas update --branch production --message \"$(git log -1 --pretty=%s)\""
   },
   "dependencies": {
     "@expo/ngrok": "^4.1.3",
