@@ -5,8 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import axios from 'axios';
-import { API_URL } from '../../config';
+import api from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../theme/ThemeContext';
 
@@ -39,7 +38,11 @@ const ReportsScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     const uid = user?.oderId || user?.id;
     if (!uid) return;
     try {
-      const res = await axios.get(`${API_URL}/api/reports/weekly/${uid}`, { timeout: 10000 });
+      // Use the shared api axios instance so the request interceptor
+      // attaches the Bearer JWT — raw axios.get() bypassed it and the
+      // server's `protect` middleware was 401-ing the call with
+      // 'Not authenticated. Please login.'
+      const res = await api.get(`/api/reports/weekly/${uid}`, { timeout: 10000 });
       if (res.data?.success) {
         setTrades(res.data.trades || []);
         setSummary(res.data.summary || {});
