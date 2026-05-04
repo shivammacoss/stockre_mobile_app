@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import * as SecureStore from 'expo-secure-store';
-import { authAPI } from '../services/api';
+import { authAPI, setAuthExpiredHandler } from '../services/api';
 
 interface User {
   id: string;
@@ -34,6 +34,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   useEffect(() => {
     loadStoredUser();
+    // Any 401 from any API call — JWT expired, server-side revoke,
+    // password changed — clears the in-memory user so AppNavigator
+    // routes back to the login screen instead of leaving stale UI.
+    setAuthExpiredHandler(() => setUser(null));
+    return () => setAuthExpiredHandler(null);
   }, []);
 
   const loadStoredUser = async () => {
@@ -52,10 +57,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const parsed = JSON.parse(storedUser);
           if (parsed && parsed._id) {
             setUser(parsed);
-            // Fire-and-forget refresh of the profile so any server-side
-            // changes (perms, balance, KYC status) show on this launch.
-            // Failure here doesn't kick the user out — the 401 path in
-            // the api interceptor handles auth invalidation centrally.
+            // Refresh profile on launch. If the JWT has expired (7-day
+            // TTL), the api response interceptor silently wipes the
+            // token from SecureStore — without this catch we'd keep the
+            // cached `user` in memory, the app would look logged-in,
+            // and the next trade would 401 with "Not authenticated.
+            // Please login." We detect 401 here and clear the in-memory
+            // user so AppNavigator routes back to the login screen.
             authAPI.getProfile()
               .then((res) => {
                 if (res.data?.user) {
@@ -63,7 +71,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                   SecureStore.setItemAsync('user', JSON.stringify(res.data.user)).catch(() => {});
                 }
               })
-              .catch(() => { /* leave cached user in place */ });
+              .catch((err) => {
+                if (err?.response?.status === 401) {
+                  setUser(null);
+                }
+              });
           } else {
             setUser(null);
           }

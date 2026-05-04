@@ -32,6 +32,17 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
+// Hook for AuthContext to subscribe to 401s. When a 401 fires we wipe
+// SecureStore (so the next request has no stale token) AND notify any
+// listener so the in-memory user state can be cleared — otherwise the
+// app keeps showing logged-in UI with no token, and the next trade
+// 401s with "Not authenticated. Please login."
+type AuthExpiredHandler = () => void;
+let onAuthExpired: AuthExpiredHandler | null = null;
+export const setAuthExpiredHandler = (fn: AuthExpiredHandler | null) => {
+  onAuthExpired = fn;
+};
+
 // Response interceptor — handle 401
 api.interceptors.response.use(
   (response) => response,
@@ -39,6 +50,7 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       await SecureStore.deleteItemAsync('authToken');
       await SecureStore.deleteItemAsync('user');
+      try { onAuthExpired?.(); } catch { /* no-op */ }
     }
     return Promise.reject(error);
   }
