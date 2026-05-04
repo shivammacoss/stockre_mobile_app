@@ -44,3 +44,7 @@ yarn-error.*
 # IDE
 .idea/
 .vscode/
+
+# Local EAS build artifacts
+build-*.apk
+build-*.aab
