@@ -32,11 +32,12 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Hook for AuthContext to subscribe to 401s. When a 401 fires we wipe
-// SecureStore (so the next request has no stale token) AND notify any
-// listener so the in-memory user state can be cleared — otherwise the
-// app keeps showing logged-in UI with no token, and the next trade
-// 401s with "Not authenticated. Please login."
+// Hook for AuthContext to subscribe to genuine auth-expired 401s.
+// We only fire this when the failing request actually carried our
+// Bearer token AND the server still rejected it — that's the real
+// "your token is no longer valid" signal. Unauthenticated requests
+// (e.g. a public endpoint that happens to return 401 for some other
+// reason) must NOT log the user out.
 type AuthExpiredHandler = () => void;
 let onAuthExpired: AuthExpiredHandler | null = null;
 export const setAuthExpiredHandler = (fn: AuthExpiredHandler | null) => {
@@ -48,9 +49,22 @@ api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     if (error.response?.status === 401) {
-      await SecureStore.deleteItemAsync('authToken');
-      await SecureStore.deleteItemAsync('user');
-      try { onAuthExpired?.(); } catch { /* no-op */ }
+      // Only treat as auth-expired if our request had a Bearer token.
+      // Otherwise this is a 401 from a public/optional endpoint and
+      // must not blow away the live session — that was wiping users
+      // out on routine navigation when any non-auth call returned 401.
+      // Axios v1 may store headers as either a plain object or an
+      // AxiosHeaders instance, so check both shapes.
+      const hdrs: any = error.config?.headers;
+      const authValue = hdrs?.Authorization
+        ?? hdrs?.authorization
+        ?? (typeof hdrs?.get === 'function' ? hdrs.get('Authorization') : undefined);
+      const sentAuthHeader = typeof authValue === 'string' && authValue.startsWith('Bearer ');
+      if (sentAuthHeader) {
+        await SecureStore.deleteItemAsync('authToken');
+        await SecureStore.deleteItemAsync('user');
+        try { onAuthExpired?.(); } catch { /* no-op */ }
+      }
     }
     return Promise.reject(error);
   }
