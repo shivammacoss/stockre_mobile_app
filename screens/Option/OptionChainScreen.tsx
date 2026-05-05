@@ -108,6 +108,21 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     })();
   }, [load]);
 
+  // Poll the chain every 5s so LTP / bid / ask / OI move in step with
+  // the broker's REST quote feed — same cadence the web client uses.
+  // Option contracts aren't on the Kite WebSocket subscription set
+  // (Kite caps WS tokens; tens of thousands of legs would saturate it),
+  // so the server's GET /api/options-chain pulls a fresh quoteMap each
+  // call. Without this poll the mobile chain froze at the snapshot
+  // taken on screen mount.
+  useEffect(() => {
+    const id = setInterval(() => {
+      // Silent reload: don't show the spinner, just swap in new strikes.
+      load().catch(() => { /* keep last snapshot on transient failure */ });
+    }, 5000);
+    return () => clearInterval(id);
+  }, [load]);
+
   // Underlying spot — Indian indexes tick under their plain symbol on Zerodha
   // ticks (NIFTY 50 -> NIFTY). For crypto we look up BTCUSD etc. Fall back to
   // the tradingsymbol the user picked.
