@@ -265,6 +265,34 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
         ltp: ctx?.ltp,
       });
     }
+    // Kick off the on-demand WS subscribe so Kite starts streaming
+    // ticks for this option leg as soon as MarketScreen renders. Same
+    // endpoint web hits from MarketPage's selected-symbol useEffect.
+    instrumentsAPI.subscribeZerodhaInstrumentBySymbol(sym).catch(() => { /* no-op */ });
+    // Cold strike (no live bid/ask/ltp on the chain row) — pull a
+    // single-symbol REST quote to seed prices before MarketScreen's
+    // order panel renders, so BUY/SELL aren't stuck at ₹0.00 while
+    // the WS subscribe spins up.
+    const _b = Number(ctx?.bid || 0), _a = Number(ctx?.ask || 0), _l = Number(ctx?.ltp || 0);
+    if (_b <= 0 && _a <= 0 && _l <= 0 && typeof mergePrice === 'function') {
+      const u = String(sym).toUpperCase();
+      let exch = 'NFO';
+      if (/^(SENSEX|BANKEX)/.test(u)) exch = 'BFO';
+      else if (/^(GOLD|GOLDM|SILVER|SILVERM|CRUDEOIL|NATURALGAS|COPPER|ZINC|ALUMINIUM|LEAD|NICKEL)/.test(u)) exch = 'MCX';
+      instrumentsAPI
+        .getZerodhaQuote(exch, sym)
+        .then((r) => {
+          const d: any = r?.data;
+          if (d?.success) {
+            mergePrice(sym, {
+              bid: Number(d.bid) || 0,
+              ask: Number(d.ask) || 0,
+              lastPrice: Number(d.ltp) || 0,
+            });
+          }
+        })
+        .catch(() => { /* leave order panel at 0 — no broker quote */ });
+    }
     navigation.navigate('MainTabs', {
       screen: 'Market',
       params: {
@@ -287,13 +315,33 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     // server subscribes them on demand (~300-800ms), so without this seed
     // ChartScreen would show 0 in its OHLC header and the LTP line would
     // be absent for the first couple of seconds.
-    if (ctx) {
-      const bid = Number(ctx.bid || 0);
-      const ask = Number(ctx.ask || 0);
-      const ltp = Number(ctx.ltp || 0);
-      if ((bid > 0 || ask > 0 || ltp > 0) && typeof mergePrice === 'function') {
-        mergePrice(sym, { bid, ask, lastPrice: ltp });
-      }
+    const bid = Number(ctx?.bid || 0);
+    const ask = Number(ctx?.ask || 0);
+    const ltp = Number(ctx?.ltp || 0);
+    if ((bid > 0 || ask > 0 || ltp > 0) && typeof mergePrice === 'function') {
+      mergePrice(sym, { bid, ask, lastPrice: ltp });
+    } else if (typeof mergePrice === 'function') {
+      // Cold strike — chain row had no live numbers. Hit the server's
+      // single-symbol REST quote so the chart + footer see whatever
+      // Kite has (depth, previous close, etc.) instead of blank ₹0.00
+      // while we wait for the WS subscribe to spin up.
+      const u = String(sym).toUpperCase();
+      let exch = 'NFO';
+      if (/^(SENSEX|BANKEX)/.test(u)) exch = 'BFO';
+      else if (/^(GOLD|GOLDM|SILVER|SILVERM|CRUDEOIL|NATURALGAS|COPPER|ZINC|ALUMINIUM|LEAD|NICKEL)/.test(u)) exch = 'MCX';
+      instrumentsAPI
+        .getZerodhaQuote(exch, sym)
+        .then((r) => {
+          const d: any = r?.data;
+          if (d?.success) {
+            mergePrice(sym, {
+              bid: Number(d.bid) || 0,
+              ask: Number(d.ask) || 0,
+              lastPrice: Number(d.ltp) || 0,
+            });
+          }
+        })
+        .catch(() => { /* no-op — chart will populate once Kite WS streams */ });
     }
     // Kick off an on-demand subscribe so the broker starts streaming real
     // WS ticks for this contract. Fire-and-forget — the chart is usable

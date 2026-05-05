@@ -264,6 +264,12 @@ export const instrumentsAPI = {
   subscribeZerodhaInstrumentBySymbol: (symbol: string) =>
     api.post('/api/zerodha/instruments/subscribe-by-symbol', { symbol }),
 
+  // Single-symbol REST quote — fallback seed for cold strikes that came
+  // back with bid=ask=ltp=0 from /api/options-chain. Same endpoint web
+  // uses from MarketPage onOpenChart.
+  getZerodhaQuote: (exchange: string, symbol: string) =>
+    api.get(`/api/zerodha/quote/${encodeURIComponent(exchange)}/${encodeURIComponent(symbol)}`),
+
   // Unsubscribe a Zerodha instrument by token
   unsubscribeZerodhaInstrument: (token: number | string) =>
     api.delete(`/api/zerodha/instruments/subscribe/${token}`),
