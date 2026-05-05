@@ -656,18 +656,20 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
         const expiryLabel = binaryExpiry >= 60 ? `${Math.floor(binaryExpiry / 60)}m` : `${binaryExpiry}s`;
         Alert.alert('Success', `${binaryDirection.toUpperCase()} ₹${binaryAmount} on ${activeTab} - ${expiryLabel}`);
       } else {
+        // 'slm' → 'stop' for the engine, same as MarketScreen.
+        const wireOrderType = orderType === 'slm' ? 'stop' : orderType;
         await tradingAPI.placeOrder({
           userId: uid,
           symbol: activeTab,
           side: orderSide,
           volume: parseFloat(volume) || 0.01,
-          orderType,
+          orderType: wireOrderType,
           price: orderType !== 'market' ? parseFloat(limitPrice) : entryPrice,
           stopLoss: stopLoss ? parseFloat(stopLoss) : undefined,
           takeProfit: takeProfit ? parseFloat(takeProfit) : undefined,
           mode: tradingMode,
           marketData: { bid: adjusted.bid || 0, ask: adjusted.ask || 0 },
-          spreadPreApplied: orderType === 'market',
+          spreadPreApplied: wireOrderType === 'market',
         } as any);
         Alert.alert('Success', `${orderSide.toUpperCase()} ${volume} lots ${activeTab} placed`);
       }

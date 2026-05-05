@@ -640,12 +640,17 @@ const MarketScreen: React.FC = () => {
           : undefined
         );
 
+        // 'slm' → 'stop' for the engine. Without this the server's
+        // pending check (orderType === 'limit' || orderType === 'stop')
+        // misses SL-M and the order opens as market immediately
+        // instead of becoming a pending stop. Mirrors web MarketPage.
+        const wireOrderType = orderType === 'slm' ? 'stop' : orderType;
         await tradingAPI.placeOrder({
           userId: uid,
           symbol: orderSymbol,
           side: orderSide,
           volume: parseFloat(volume) || 0.01,
-          orderType,
+          orderType: wireOrderType,
           price: orderType !== 'market' ? parseFloat(limitPrice) : entryPrice,
           stopLoss: stopLoss ? parseFloat(stopLoss) : undefined,
           takeProfit: takeProfit ? parseFloat(takeProfit) : undefined,
@@ -658,7 +663,7 @@ const MarketScreen: React.FC = () => {
           // re-apply the segment spread on top of an already-adjusted
           // entry price (matches web MarketPage).
           marketData: { bid: adjusted.bid || 0, ask: adjusted.ask || 0 },
-          spreadPreApplied: orderType === 'market',
+          spreadPreApplied: wireOrderType === 'market',
         } as any);
         Alert.alert('Success', `${orderSide.toUpperCase()} ${volume} lots ${orderSymbol} placed`);
       }
