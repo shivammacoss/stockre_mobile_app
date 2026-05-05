@@ -56,6 +56,7 @@ const OrdersScreen: React.FC = () => {
   const [history, setHistory] = useState<any[]>([]);
   const [cancelled, setCancelled] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [usdInrRate, setUsdInrRate] = useState(83);
 
   // Edit SL/TP modal
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -119,14 +120,20 @@ const OrdersScreen: React.FC = () => {
     // positions endpoint that 4xx's) used to take Promise.all down with
     // it, leaving wallet.balance at the initial 0 and the ledger card
     // showing ₹0.00 even though the user actually has funds.
-    const [posRes, pendRes, walRes] = await Promise.all([
+    const [posRes, pendRes, walRes, rateRes] = await Promise.all([
       tradingAPI.getAllPositions(uid).catch(() => null),
       tradingAPI.getPendingOrders(uid).catch(() => null),
       walletAPI.getUserWallet(uid).catch(() => null),
+      walletAPI.getExchangeRate().catch(() => null),
     ]);
     if (posRes?.data?.positions) setPositions(posRes.data.positions);
     if (pendRes?.data?.orders) setPendingOrders(pendRes.data.orders);
     if (walRes?.data?.wallet) setWallet(walRes.data.wallet);
+    {
+      const rd: any = rateRes?.data;
+      const r = Number(rd?.USD_TO_INR ?? rd?.rates?.USD_TO_INR ?? rd?.rate);
+      if (Number.isFinite(r) && r > 0) setUsdInrRate(r);
+    }
 
     // History: page through ALL trades (server defaults limit=50, web
     // does the same loop). Then collapse the synthetic 'history parent'
@@ -365,27 +372,41 @@ const OrdersScreen: React.FC = () => {
   // ask, so the user sees the full spread as immediate floating loss.
   const { applyToQuote: applyOrdersSpread } = useSpreadCatalog('netting');
 
+  // Returns floating P/L in INR (wallet currency). Indian segments
+  // produce native INR (price × quantity). Non-Indian (forex / metals
+  // / crypto / indices) produce USD by MT5 lot math, then converted
+  // via the live USD/INR rate. Previous build summed USD floating
+  // P/L into the M2M tile as if it were already INR — XAUUSD trades
+  // showed ~1/95th of their real ₹ P/L.
   const calcLivePnl = (pos: any) => {
+    const isIndian = ['NSE','BSE','NFO','BFO','MCX','CDS'].includes((pos.exchange||'').toUpperCase());
     const lp = prices[pos.symbol];
-    if (!lp) return pos.profit || 0;
+    if (!lp) {
+      // Server's pos.profit is INR for Indian, USD for non-Indian.
+      const fallback = Number(pos.profit) || 0;
+      return isIndian ? fallback : fallback * (Number(usdInrRate) || 83);
+    }
     const rawBid = Number(lp.bid || lp.lastPrice || lp.last || 0);
     const rawAsk = Number(lp.ask || lp.lastPrice || lp.last || 0);
     const adj = applyOrdersSpread(pos.symbol, pos, rawBid, rawAsk);
     const current = pos.side === 'buy' ? (adj.bid || rawBid) : (adj.ask || rawAsk);
     const entry = pos.avgPrice || pos.entryPrice || 0;
-    if (!current || !entry) return pos.profit || 0;
+    if (!current || !entry) {
+      const fallback = Number(pos.profit) || 0;
+      return isIndian ? fallback : fallback * (Number(usdInrRate) || 83);
+    }
     const diff = pos.side === 'buy' ? current - entry : entry - current;
     const vol = pos.volume || 0;
     const sym = (pos.symbol || '').toUpperCase();
-    const isIndian = ['NSE','BSE','NFO','BFO','MCX'].includes((pos.exchange||'').toUpperCase());
     if (isIndian) return diff * (pos.quantity || vol * (pos.lotSize || 1));
+    // Non-Indian: MT5 contract size table → USD, then × usdInrRate.
     let cs = 100000;
     if (sym.includes('BTC')||sym.includes('ETH')) cs = 1;
     else if (sym.includes('XAU')||sym.includes('XPTUSD')) cs = 100;
     else if (sym.includes('XAG')) cs = 5000;
     else if (sym.includes('US100')||sym.includes('US30')||sym.includes('US500')||sym.includes('NAS')) cs = 1;
-    if (sym.includes('JPY')) return (diff * 100000 * vol) / 100;
-    return diff * cs * vol;
+    const pnlUsd = sym.includes('JPY') ? (diff * 100000 * vol) / 100 : diff * cs * vol;
+    return pnlUsd * (Number(usdInrRate) || 83);
   };
 
   // calcLivePnl returns each position's P/L in its native currency — INR for

@@ -136,7 +136,12 @@ const HomeScreen: React.FC = () => {
     const sym = pos.symbol || '';
     const lp = prices[sym];
     if (!lp || (!lp.bid && !lp.ask)) return;
-    const curPrice = n(pos.side === 'buy' ? lp.bid : lp.ask);
+    // Adjust the mark-side price by the segment spread (matches web
+    // UserLayout). Without this floating P/L undercounted the spread
+    // because entries are stored already-adjusted but the mark side
+    // used the raw tick.
+    const _adj = applySpreadFromCatalog(sym, pos, n(lp.bid), n(lp.ask));
+    const curPrice = pos.side === 'buy' ? n(_adj.bid || lp.bid) : n(_adj.ask || lp.ask);
     const entryPrice = n(pos.entryPrice || pos.avgPrice);
     const priceDiff = pos.side === 'buy' ? curPrice - entryPrice : entryPrice - curPrice;
     const ex = (pos.exchange || '').toUpperCase();
@@ -180,7 +185,8 @@ const HomeScreen: React.FC = () => {
     const sym = pos.symbol || '';
     const lp = prices[sym];
     if (!lp || (!lp.bid && !lp.ask)) return n(pos.profit);
-    const curPrice = n(pos.side === 'buy' ? lp.bid : lp.ask);
+    const _adj2 = applySpreadFromCatalog(sym, pos, n(lp.bid), n(lp.ask));
+    const curPrice = pos.side === 'buy' ? n(_adj2.bid || lp.bid) : n(_adj2.ask || lp.ask);
     const entryPrice = n(pos.entryPrice || pos.avgPrice);
     const priceDiff = pos.side === 'buy' ? curPrice - entryPrice : entryPrice - curPrice;
     const ex = (pos.exchange || '').toUpperCase();
