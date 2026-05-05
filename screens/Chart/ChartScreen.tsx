@@ -591,20 +591,33 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
     tradingMode,
   );
 
-  // Snap the chart's lot input up to the admin minimum (e.g. min 0.3)
-  // once segment settings load. The chart's volume stepper hardcodes
-  // 0.01 increments, which would otherwise let users keep a value
-  // below the admin's setting until the server rejected it.
+  // Whether the active chart symbol is an Indian F&O / index leg.
+  // The chart's quick-trade ships whole-lot volumes for these, while
+  // forex / crypto / commodities use 0.01-step micro-lots. Without
+  // this, the chart stepper sat at 0.01 even on a NIFTY option and
+  // either rejected (admin min lot 1) or sent a tiny order through.
+  const isChartIndian = (() => {
+    const s = (activeTab || '').toUpperCase();
+    if (/^[A-Z&]{2,}\d+.*(?:\d(?:CE|PE)|FUT)$/.test(s)) return true;
+    return ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'NIFTYNXT50', 'SENSEX', 'BANKEX']
+      .some((n) => s === n || s.startsWith(n));
+  })();
+  const chartLotStep = isChartIndian ? 1 : 0.01;
+  const chartMinLot =
+    typeof chartSegmentSettings?.minLots === 'number' && chartSegmentSettings.minLots! > 0
+      ? Number(chartSegmentSettings.minLots)
+      : (isChartIndian ? 1 : 0.01);
+
+  // Snap the chart's lot input up to the admin minimum once segment
+  // settings load AND when the active symbol changes (Indian symbols
+  // shouldn't sit at the 0.01 default forex micro-lot — server's min
+  // lot would reject anyway).
   useEffect(() => {
-    const adminMin =
-      typeof chartSegmentSettings?.minLots === 'number' && chartSegmentSettings.minLots! > 0
-        ? Number(chartSegmentSettings.minLots)
-        : null;
-    if (!adminMin) return;
+    if (!chartMinLot || chartMinLot <= 0) return;
     const cur = parseFloat(volume) || 0;
-    if (cur < adminMin) setVolume(String(adminMin));
+    if (cur < chartMinLot) setVolume(String(chartMinLot));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chartSegmentSettings?.minLots]);
+  }, [chartMinLot, activeTab]);
 
   // Spread-adjusted quote for the active chart symbol — matches the
   // user-visible BUY/SELL cards. Indian Zerodha ticks have bid==ask==
@@ -771,7 +784,10 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
 
       await tradingAPI.placeOrder({
         userId: uid, symbol: activeTab, side,
-        volume: parseFloat(volume) || 1,
+        // Empty-input fallback respects the active symbol's lot floor:
+        // Indian F&O can't trade 0.01 (admin min lot is whole lots),
+        // forex/crypto can't trade 1.
+        volume: parseFloat(volume) || chartMinLot,
         orderType: 'market',
         price: side === 'buy' ? (adjusted.ask || 0) : (adjusted.bid || 0),
         mode: tradingMode,
@@ -1046,9 +1062,9 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
                 )}
                 <Text style={{ color: colors.t1, fontSize: 12, fontWeight: '600', marginBottom: 6 }}>Lot Size</Text>
                 <View style={[styles.volumeRow, { backgroundColor: colors.bg3, borderColor: colors.border }]}>
-                  <TouchableOpacity style={styles.volumeBtn} onPress={() => setVolume(p => Math.max(0.01, parseFloat(((parseFloat(p) || 0.01) - 0.01).toFixed(6))).toString())}><Text style={[styles.volumeBtnTxt, { color: colors.t1 }]}>−</Text></TouchableOpacity>
+                  <TouchableOpacity style={styles.volumeBtn} onPress={() => setVolume(p => Math.max(chartMinLot, parseFloat(((parseFloat(p) || chartMinLot) - chartLotStep).toFixed(6))).toString())}><Text style={[styles.volumeBtnTxt, { color: colors.t1 }]}>−</Text></TouchableOpacity>
                   <TextInput style={[styles.volumeInput, { color: colors.t1 }]} value={volume} onChangeText={v => { if (v === '' || /^[0-9]*\.?[0-9]*$/.test(v)) setVolume(v); }} keyboardType="decimal-pad" />
-                  <TouchableOpacity style={styles.volumeBtn} onPress={() => setVolume(p => parseFloat(((parseFloat(p) || 0.01) + 0.01).toFixed(6)).toString())}><Text style={[styles.volumeBtnTxt, { color: colors.t1 }]}>+</Text></TouchableOpacity>
+                  <TouchableOpacity style={styles.volumeBtn} onPress={() => setVolume(p => parseFloat(((parseFloat(p) || chartMinLot) + chartLotStep).toFixed(6)).toString())}><Text style={[styles.volumeBtnTxt, { color: colors.t1 }]}>+</Text></TouchableOpacity>
                 </View>
                 <Text style={{ color: colors.t3, fontSize: 11, marginBottom: 14 }}>{(parseFloat(volume) || 0).toFixed(4)} lots</Text>
                 <TouchableOpacity style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10 }} onPress={() => setShowSL(!showSL)}>
