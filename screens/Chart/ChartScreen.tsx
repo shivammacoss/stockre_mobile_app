@@ -658,6 +658,43 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
       } else {
         // 'slm' → 'stop' for the engine, same as MarketScreen.
         const wireOrderType = orderType === 'slm' ? 'stop' : orderType;
+        // Derive exchange / segment / lotSize from the tradingsymbol so
+        // F&O orders placed from the chart open with the correct
+        // segment routing. Without this, an option deep-linked from
+        // OptionChain lands here with NO instrument metadata and the
+        // server fell back to NSE_EQ — quantity defaulted to volume,
+        // breaking PnL = priceDiff × (lots × lotSize). Same pattern
+        // MarketScreen uses.
+        const fnoExchange = (() => {
+          const under = (activeTab.match(/^[A-Z&]+/)?.[0] || '').toUpperCase();
+          if (['GOLD','GOLDM','SILVER','SILVERM','CRUDEOIL','NATURALGAS','COPPER','ZINC','ALUMINIUM','LEAD','NICKEL'].includes(under)) return 'MCX';
+          if (['SENSEX','BANKEX'].includes(under)) return 'BFO';
+          if (/^[A-Z&]+\d{2}[A-Z]{3}\d*(CE|PE|FUT)$/.test(activeTab)) return 'NFO';
+          return undefined;
+        })();
+        const fnoSegment = (() => {
+          if (/^[A-Z&]+\d{2}[A-Z]{3}\d*(CE|PE)$/.test(activeTab)) {
+            return fnoExchange === 'MCX' ? 'MCX OPT' : fnoExchange === 'BFO' ? 'BSE OPT' : 'NSE OPT';
+          }
+          if (/^[A-Z&]+\d{2}[A-Z]{3}FUT$/.test(activeTab)) {
+            return fnoExchange === 'MCX' ? 'MCX FUT' : fnoExchange === 'BFO' ? 'BSE FUT' : 'NSE FUT';
+          }
+          return undefined;
+        })();
+        // Lot size hint — server still authoritatively reads from the
+        // instrument cache, but we send our best guess so freshly-
+        // subscribed options open with the correct quantity even
+        // before the broker session has the contract enriched.
+        const KNOWN_LOTS: Record<string, number> = {
+          NIFTY: 65, BANKNIFTY: 15, FINNIFTY: 40, MIDCPNIFTY: 75,
+          SENSEX: 10, BANKEX: 15,
+          CRUDEOIL: 100, GOLD: 100, SILVER: 30, SILVERM: 5,
+          COPPER: 2500, NATURALGAS: 1250, ZINC: 5000,
+          ALUMINIUM: 5000, LEAD: 5000, NICKEL: 1500,
+        };
+        const under = (activeTab.match(/^[A-Z&]+/)?.[0] || '').toUpperCase();
+        const lotHint = KNOWN_LOTS[under];
+
         await tradingAPI.placeOrder({
           userId: uid,
           symbol: activeTab,
@@ -668,6 +705,9 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
           stopLoss: stopLoss ? parseFloat(stopLoss) : undefined,
           takeProfit: takeProfit ? parseFloat(takeProfit) : undefined,
           mode: tradingMode,
+          exchange: fnoExchange,
+          segment: fnoSegment,
+          lotSize: lotHint,
           marketData: { bid: adjusted.bid || 0, ask: adjusted.ask || 0 },
           spreadPreApplied: wireOrderType === 'market',
         } as any);
@@ -700,12 +740,44 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
         }
       }
 
+      // Same F&O exchange/segment/lotSize derivation as handlePlaceOrder
+      // so options/futures opened from the chart's quick-trade FAB also
+      // route to the right segment instead of NSE_EQ default.
+      const fnoExchange = (() => {
+        const under = (activeTab.match(/^[A-Z&]+/)?.[0] || '').toUpperCase();
+        if (['GOLD','GOLDM','SILVER','SILVERM','CRUDEOIL','NATURALGAS','COPPER','ZINC','ALUMINIUM','LEAD','NICKEL'].includes(under)) return 'MCX';
+        if (['SENSEX','BANKEX'].includes(under)) return 'BFO';
+        if (/^[A-Z&]+\d{2}[A-Z]{3}\d*(CE|PE|FUT)$/.test(activeTab)) return 'NFO';
+        return undefined;
+      })();
+      const fnoSegment = (() => {
+        if (/^[A-Z&]+\d{2}[A-Z]{3}\d*(CE|PE)$/.test(activeTab)) {
+          return fnoExchange === 'MCX' ? 'MCX OPT' : fnoExchange === 'BFO' ? 'BSE OPT' : 'NSE OPT';
+        }
+        if (/^[A-Z&]+\d{2}[A-Z]{3}FUT$/.test(activeTab)) {
+          return fnoExchange === 'MCX' ? 'MCX FUT' : fnoExchange === 'BFO' ? 'BSE FUT' : 'NSE FUT';
+        }
+        return undefined;
+      })();
+      const KNOWN_LOTS: Record<string, number> = {
+        NIFTY: 65, BANKNIFTY: 15, FINNIFTY: 40, MIDCPNIFTY: 75,
+        SENSEX: 10, BANKEX: 15,
+        CRUDEOIL: 100, GOLD: 100, SILVER: 30, SILVERM: 5,
+        COPPER: 2500, NATURALGAS: 1250, ZINC: 5000,
+        ALUMINIUM: 5000, LEAD: 5000, NICKEL: 1500,
+      };
+      const under = (activeTab.match(/^[A-Z&]+/)?.[0] || '').toUpperCase();
+      const lotHint = KNOWN_LOTS[under];
+
       await tradingAPI.placeOrder({
         userId: uid, symbol: activeTab, side,
         volume: parseFloat(volume) || 1,
         orderType: 'market',
         price: side === 'buy' ? (adjusted.ask || 0) : (adjusted.bid || 0),
         mode: tradingMode,
+        exchange: fnoExchange,
+        segment: fnoSegment,
+        lotSize: lotHint,
         marketData: { bid: adjusted.bid || 0, ask: adjusted.ask || 0 },
         spreadPreApplied: true,
       } as any);
