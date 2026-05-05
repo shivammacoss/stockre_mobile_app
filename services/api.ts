@@ -177,6 +177,8 @@ export const tradingAPI = {
     mode?: string;
     currentPrice?: number;
     positionId?: string;
+    marketData?: { bid: number; ask: number };
+    spreadPreApplied?: boolean;
   }) => api.post('/api/positions/close', data),
 
   // Alias

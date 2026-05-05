@@ -12,6 +12,7 @@ import { useTheme } from '../../theme/ThemeContext';
 import { tradingAPI, walletAPI, reportsAPI } from '../../services/api';
 import AppHeader from '../../components/AppHeader';
 import MobileStatusFooter from '../../components/MobileStatusFooter';
+import { useSpreadCatalog } from '../../hooks/useSpreadCatalog';
 
 // Indian instrument detector (Zerodha categories or exchange)
 const INDIAN_EXCHANGES = new Set(['NSE', 'BSE', 'NFO', 'BFO', 'MCX']);
@@ -209,7 +210,14 @@ const OrdersScreen: React.FC = () => {
     try {
       const uid = user?.oderId || user?.id || '';
       const lp = prices[closingPos.symbol];
-      const closePrice = closingPos.side === 'buy' ? (lp?.bid || 0) : (lp?.ask || 0);
+      // Apply segment spread to the close-side mark, same as the order
+      // ticket. Sending raw bid/ask + no spreadPreApplied flag made the
+      // engine apply a full spread on top, so realized P/L diverged
+      // from the floating P/L the user just saw.
+      const rawBid = Number(lp?.bid || lp?.lastPrice || 0);
+      const rawAsk = Number(lp?.ask || lp?.lastPrice || 0);
+      const adj = applyOrdersSpread(closingPos.symbol, closingPos, rawBid, rawAsk);
+      const closePrice = closingPos.side === 'buy' ? (adj.bid || rawBid) : (adj.ask || rawAsk);
       await tradingAPI.closePosition({
         userId: uid,
         symbol: closingPos.symbol,
@@ -217,7 +225,9 @@ const OrdersScreen: React.FC = () => {
         mode: closingPos.mode || 'netting',
         positionId: closingPos.oderId || closingPos._id,
         currentPrice: closePrice || undefined,
-      });
+        marketData: { bid: adj.bid || rawBid, ask: adj.ask || rawAsk },
+        spreadPreApplied: true,
+      } as any);
       setCloseModalOpen(false);
       loadData();
     } catch (e: any) {
@@ -348,11 +358,20 @@ const OrdersScreen: React.FC = () => {
   // use that instead of falling back to the server-snapshot pos.profit —
   // pos.profit is computed against an older tick and causes visible
   // flicker between "live" and "stale" values on the Orders screen.
+  // Spread catalog so the mark-side price respects admin's segment
+  // spread — without this, floating P/L undercounted the spread (the
+  // entry was stored spread-adjusted but the mark side used raw
+  // bid/ask). MT5: BUY marks at adjusted bid, SELL marks at adjusted
+  // ask, so the user sees the full spread as immediate floating loss.
+  const { applyToQuote: applyOrdersSpread } = useSpreadCatalog('netting');
+
   const calcLivePnl = (pos: any) => {
     const lp = prices[pos.symbol];
     if (!lp) return pos.profit || 0;
-    const sideKey = pos.side === 'buy' ? 'bid' : 'ask';
-    const current = lp[sideKey] || lp.lastPrice || lp.last || 0;
+    const rawBid = Number(lp.bid || lp.lastPrice || lp.last || 0);
+    const rawAsk = Number(lp.ask || lp.lastPrice || lp.last || 0);
+    const adj = applyOrdersSpread(pos.symbol, pos, rawBid, rawAsk);
+    const current = pos.side === 'buy' ? (adj.bid || rawBid) : (adj.ask || rawAsk);
     const entry = pos.avgPrice || pos.entryPrice || 0;
     if (!current || !entry) return pos.profit || 0;
     const diff = pos.side === 'buy' ? current - entry : entry - current;
