@@ -138,8 +138,8 @@ export const tradingAPI = {
   getPositions: (userId: string, mode: string = 'netting') =>
     api.get(`/api/positions/${mode}/${userId}`),
 
-  getTradeHistory: (userId: string) =>
-    api.get(`/api/trades/${userId}`),
+  getTradeHistory: (userId: string, page: number = 1, limit: number = 100) =>
+    api.get(`/api/trades/${userId}?page=${page}&limit=${limit}`),
 
   getPendingOrders: (userId: string) =>
     api.get(`/api/orders/pending/${userId}`),

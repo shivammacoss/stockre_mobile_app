@@ -118,16 +118,48 @@ const OrdersScreen: React.FC = () => {
     // positions endpoint that 4xx's) used to take Promise.all down with
     // it, leaving wallet.balance at the initial 0 and the ledger card
     // showing ₹0.00 even though the user actually has funds.
-    const [posRes, pendRes, histRes, walRes] = await Promise.all([
+    const [posRes, pendRes, walRes] = await Promise.all([
       tradingAPI.getAllPositions(uid).catch(() => null),
       tradingAPI.getPendingOrders(uid).catch(() => null),
-      tradingAPI.getTradeHistory(uid).catch(() => null),
       walletAPI.getUserWallet(uid).catch(() => null),
     ]);
     if (posRes?.data?.positions) setPositions(posRes.data.positions);
     if (pendRes?.data?.orders) setPendingOrders(pendRes.data.orders);
-    if (histRes?.data?.trades) setHistory(histRes.data.trades);
     if (walRes?.data?.wallet) setWallet(walRes.data.wallet);
+
+    // History: page through ALL trades (server defaults limit=50, web
+    // does the same loop). Then collapse the synthetic 'history parent'
+    // Trade + its child leg trades — the engine writes both for every
+    // fully-closed position; without dedup the user sees each trade
+    // twice (parent summary + the leg close).
+    try {
+      let all: any[] = [];
+      let page = 1;
+      // Hard cap pages so a corrupt server response can't loop forever.
+      while (page <= 50) {
+        const res = await tradingAPI.getTradeHistory(uid, page, 100);
+        const rows = res?.data?.trades || [];
+        if (!rows.length) break;
+        all = all.concat(rows);
+        if (!res.data?.pagination?.hasMore) break;
+        page += 1;
+      }
+      // First pass: collect every groupId that has a parent row.
+      const parentGroupIds = new Set<string>();
+      for (const t of all) {
+        if (t?.isHistoryParent && t?.groupId) parentGroupIds.add(String(t.groupId));
+      }
+      // Second pass: keep parents + standalone trades; drop child legs
+      // whose groupId is already represented by a parent.
+      const deduped = all.filter((t) => {
+        if (t?.isHistoryParent) return true;
+        if (t?.groupId && parentGroupIds.has(String(t.groupId))) return false;
+        return true;
+      });
+      setHistory(deduped);
+    } catch (_) {
+      /* leave previous history in place on transient failure */
+    }
   };
 
   const onRefresh = async () => { setRefreshing(true); await loadData(); setRefreshing(false); };
