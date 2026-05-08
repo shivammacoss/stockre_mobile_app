@@ -119,7 +119,7 @@ const OptionChainScreen: React.FC<{ navigation: any; route: any }> = ({ navigati
     const id = setInterval(() => {
       // Silent reload: don't show the spinner, just swap in new strikes.
       load().catch(() => { /* keep last snapshot on transient failure */ });
-    }, 5000);
+    }, 2000);
     return () => clearInterval(id);
   }, [load]);
 
