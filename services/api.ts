@@ -202,6 +202,10 @@ export const tradingAPI = {
   cancelPendingOrder: (data: { userId: string; orderId: string; mode?: string }) =>
     api.post('/api/orders/cancel', data),
 
+  // All active trade legs (every open entry across all open positions)
+  getActiveTrades: (userId: string) =>
+    api.get(`/api/user/active-trades/${encodeURIComponent(userId)}`),
+
   // Netting entries — individual trade legs for a parent position
   getTradeLegs: (userId: string, orderId: string) =>
     api.get(`/api/trades/legs/${userId}/${encodeURIComponent(orderId)}`),

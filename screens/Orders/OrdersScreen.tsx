@@ -35,9 +35,10 @@ const MODE_META: Record<string, { letter: string; color: string; bg: string }> =
    Header → Date filters → 4-tab pill bar → Card list
    ================================================================ */
 
-type TabKey = 'open' | 'pending' | 'history' | 'cancelled';
+type TabKey = 'open' | 'active' | 'pending' | 'history' | 'cancelled';
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'open', label: 'Open' },
+  { key: 'active', label: 'Active' },
   { key: 'pending', label: 'Pending' },
   { key: 'history', label: 'History' },
   { key: 'cancelled', label: 'Cancelled' },
@@ -55,6 +56,7 @@ const OrdersScreen: React.FC = () => {
   const [pendingOrders, setPendingOrders] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const [cancelled, setCancelled] = useState<any[]>([]);
+  const [activeTrades, setActiveTrades] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [usdInrRate, setUsdInrRate] = useState(83);
 
@@ -120,15 +122,17 @@ const OrdersScreen: React.FC = () => {
     // positions endpoint that 4xx's) used to take Promise.all down with
     // it, leaving wallet.balance at the initial 0 and the ledger card
     // showing ₹0.00 even though the user actually has funds.
-    const [posRes, pendRes, walRes, rateRes] = await Promise.all([
+    const [posRes, pendRes, walRes, rateRes, activeRes] = await Promise.all([
       tradingAPI.getAllPositions(uid).catch(() => null),
       tradingAPI.getPendingOrders(uid).catch(() => null),
       walletAPI.getUserWallet(uid).catch(() => null),
       walletAPI.getExchangeRate().catch(() => null),
+      tradingAPI.getActiveTrades(uid).catch(() => null),
     ]);
     if (posRes?.data?.positions) setPositions(posRes.data.positions);
     if (pendRes?.data?.orders) setPendingOrders(pendRes.data.orders);
     if (walRes?.data?.wallet) setWallet(walRes.data.wallet);
+    if (activeRes?.data?.trades) setActiveTrades(activeRes.data.trades);
     {
       const rd: any = rateRes?.data;
       const r = Number(rd?.USD_TO_INR ?? rd?.rates?.USD_TO_INR ?? rd?.rate);
@@ -290,6 +294,54 @@ const OrdersScreen: React.FC = () => {
     setLegEditOpen(true);
   };
 
+  // Active-tab close: leg is shown standalone (no parent legsPosition in
+  // scope), so derive the live close price directly from the price feed
+  // for that symbol — same convention as the Open tab cards.
+  const confirmCloseActiveLeg = (leg: any) => {
+    const lp = prices[leg.symbol];
+    const livePx = lp ? ((leg.side === 'buy' ? lp.bid : lp.ask) || lp.lastPrice || lp.last || 0) : 0;
+    const px = Number(livePx) || Number(leg.currentPrice) || Number(leg.entryPrice) || 0;
+    if (!(px > 0)) {
+      Alert.alert('Error', 'No live price available to close this entry');
+      return;
+    }
+    Alert.alert(
+      'Close Entry',
+      `Close ${parseFloat(Number(leg.remainingVolume || leg.volume || 0).toFixed(4))} lots of ${leg.symbol} at ${px.toFixed(4)}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Close',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const uid = user?.oderId || user?.id || '';
+              await tradingAPI.closePositionLeg({
+                userId: uid,
+                tradeId: leg.tradeId || leg._id,
+                currentPrice: px,
+                closeReason: 'user',
+              });
+              loadData();
+            } catch (e: any) {
+              Alert.alert('Error', e?.response?.data?.error || e.message);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const openActiveLegEditModal = (leg: any) => {
+    // Reuses the per-leg SL/TP modal — already wired to saveLegSLTP +
+    // tradingAPI.updateTradeLeg, so editing from the Active tab posts to
+    // the same /api/user/trades/:id/sltp endpoint.
+    setLegBeingEdited(leg);
+    setLegEditSL(leg.stopLoss != null ? String(leg.stopLoss) : '');
+    setLegEditTP(leg.takeProfit != null ? String(leg.takeProfit) : '');
+    setLegEditOpen(true);
+  };
+
   const confirmCloseLeg = (leg: any) => {
     const px = Number(legsPosition?.currentPrice || legsPosition?.entryPrice || 0);
     if (!(px > 0)) {
@@ -356,7 +408,12 @@ const OrdersScreen: React.FC = () => {
     ]);
   };
 
-  const getData = () => tab === 'open' ? positions : tab === 'pending' ? pendingOrders : tab === 'history' ? history : cancelled;
+  const getData = () =>
+    tab === 'open' ? positions
+    : tab === 'active' ? activeTrades
+    : tab === 'pending' ? pendingOrders
+    : tab === 'history' ? history
+    : cancelled;
 
   // Live P/L from socket prices (same formula as web MarketPage calculateProfit).
   // For each side we want the price that the user would close AT — bid for
@@ -422,6 +479,21 @@ const OrdersScreen: React.FC = () => {
   // All three are in INR here.
   const marginAvailable = ledgerBalance - marginUsed + totalPnlInr;
 
+  // CF totals — only set on positions whose segment auto-square-offs
+  // (Indian NSE/BSE/MCX/CDS); always-on segments leave cfMarginRequired
+  // null on the server, so the reduce naturally skips them.
+  const cfTotal = positions.reduce(
+    (s, p) => s + (Number(p.cfMarginRequired) || 0), 0
+  );
+  const cfExtraNeeded = positions.reduce((s, p) => {
+    const cf = Number(p.cfMarginRequired) || 0;
+    if (cf <= 0) return s;
+    const cur = Number(p.marginUsed) || 0;
+    const extra = cf - cur;
+    return s + (extra > 0 ? extra : 0);
+  }, 0);
+  const showCfRow = cfTotal > 0;
+
   const remarkColor = (r: string) => {
     if (!r) return colors.t3;
     const rl = r.toLowerCase();
@@ -434,7 +506,7 @@ const OrdersScreen: React.FC = () => {
   };
 
   const renderCard = ({ item: pos, index }: { item: any; index: number }) => {
-    const livePnl = tab === 'open' ? calcLivePnl(pos) : (pos.profit || 0);
+    const livePnl = (tab === 'open' || tab === 'active') ? calcLivePnl(pos) : (pos.profit || 0);
     const lp = prices[pos.symbol];
     const liveCurrentPrice = lp
       ? ((pos.side === 'buy' ? lp.bid : lp.ask) || lp.lastPrice || lp.last || pos.currentPrice || 0)
@@ -473,7 +545,7 @@ const OrdersScreen: React.FC = () => {
             </View>
           )}
         </View>
-        {(tab === 'open' || tab === 'history') && (
+        {(tab === 'open' || tab === 'active' || tab === 'history') && (
           <Text style={{ color: livePnl >= 0 ? colors.green : colors.red, fontSize: 14, fontWeight: '700' }}>
             {formatPnl(livePnl, pos)}
           </Text>
@@ -483,7 +555,13 @@ const OrdersScreen: React.FC = () => {
       {/* Body rows */}
       <View style={styles.cardBody}>
         <Row label="Entry" value={`${(pos.avgPrice || pos.entryPrice || 0).toFixed(2)}`} colors={colors} />
-        {tab === 'open' && <Row label="Current" value={`${liveCurrentPrice.toFixed(2)}`} colors={colors} />}
+        {(tab === 'open' || tab === 'active') && <Row label="Current" value={`${liveCurrentPrice.toFixed(2)}`} colors={colors} />}
+        {tab === 'active' && (
+          <>
+            <Row label="S/L" value={pos.stopLoss != null ? String(pos.stopLoss) : '—'} colors={colors} />
+            <Row label="T/P" value={pos.takeProfit != null ? String(pos.takeProfit) : '—'} colors={colors} />
+          </>
+        )}
         {tab === 'open' && (() => {
           // Commission: prefer native openCommissionInr, fallback to USD × live rate.
           // Server stores `openCommission` (USD) and `openCommissionInr` (native ₹)
@@ -499,10 +577,20 @@ const OrdersScreen: React.FC = () => {
           const swapUsd = Number(pos.swap) || 0;
           const swapInr = Number(pos.swapInr) || 0;
           const swapVal = swapInr !== 0 ? swapInr : swapUsd * 83;
+          // Margin currently locked + CF margin required (server-decorated).
+          const marginUsedInr = Number(pos.marginUsed) || 0;
+          const cfMargin = pos.cfMarginRequired != null ? Number(pos.cfMarginRequired) : null;
           return (
             <>
               <Row label="Commission" value={`${sym}${displayVal.toFixed(2)}`} colors={colors} />
               <Row label="Swap" value={`${sym}${swapVal.toFixed(2)}`} colors={colors} />
+              <Row label="Margin Used" value={`${sym}${marginUsedInr.toFixed(2)}`} colors={colors} />
+              {cfMargin != null && cfMargin > 0 && (
+                <View style={styles.infoRow}>
+                  <Text style={{ color: colors.t3, fontSize: 12 }}>CF Margin (at EOD)</Text>
+                  <Text style={{ color: '#f59e0b', fontSize: 12, fontWeight: '600' }}>{`${sym}${cfMargin.toFixed(2)}`}</Text>
+                </View>
+              )}
             </>
           );
         })()}
@@ -523,6 +611,16 @@ const OrdersScreen: React.FC = () => {
           </TouchableOpacity>
           <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.redDim, borderColor: colors.red }]} onPress={() => openCloseModal(pos)}>
             <Text style={{ color: colors.red, fontSize: 12, fontWeight: '600' }}>Close</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      {tab === 'active' && (
+        <View style={styles.cardActions}>
+          <TouchableOpacity style={[styles.actionBtn, { borderColor: colors.border }]} onPress={() => openActiveLegEditModal(pos)}>
+            <Text style={{ color: colors.t2, fontSize: 12, fontWeight: '600' }}>Edit S/L T/P</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.redDim, borderColor: colors.red }]} onPress={() => confirmCloseActiveLeg(pos)}>
+            <Text style={{ color: colors.red, fontSize: 12, fontWeight: '600' }}>Close Leg</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -609,6 +707,26 @@ const OrdersScreen: React.FC = () => {
               </Text>
             </View>
           </View>
+          {showCfRow && (
+            <>
+              <View style={[styles.summaryHDivider, { backgroundColor: colors.border }]} />
+              <View style={styles.summaryRow}>
+                <View style={styles.summaryCell}>
+                  <Text style={[styles.summaryLabel, { color: colors.t3 }]}>CF TOTAL (EOD)</Text>
+                  <Text style={[styles.summaryValue, { color: '#f59e0b' }]}>
+                    ₹{cfTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </Text>
+                </View>
+                <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
+                <View style={styles.summaryCell}>
+                  <Text style={[styles.summaryLabel, { color: colors.t3 }]}>CF EXTRA NEEDED</Text>
+                  <Text style={[styles.summaryValue, { color: cfExtraNeeded > 0 ? colors.red : colors.green }]}>
+                    ₹{cfExtraNeeded.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </Text>
+                </View>
+              </View>
+            </>
+          )}
         </View>
       )}
 
@@ -624,7 +742,7 @@ const OrdersScreen: React.FC = () => {
             <View style={{ alignItems: 'center', paddingVertical: 48 }}>
               <Text style={{ fontSize: 36, marginBottom: 8 }}>📋</Text>
               <Text style={{ color: colors.t1, fontWeight: '500', fontSize: 15 }}>
-                No {tab === 'open' ? 'open positions' : tab === 'pending' ? 'pending orders' : tab === 'history' ? 'trade history' : 'cancelled orders'}
+                No {tab === 'open' ? 'open positions' : tab === 'active' ? 'active trade legs' : tab === 'pending' ? 'pending orders' : tab === 'history' ? 'trade history' : 'cancelled orders'}
               </Text>
             </View>
           }
