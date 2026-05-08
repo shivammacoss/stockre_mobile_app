@@ -213,8 +213,18 @@ var Datafeed = {
 // ─── Live price injection (called from RN) ───
 function updateLivePrice(sym, priceObj){
   livePrices[sym]=priceObj;
-  var chartPrice=priceObj.bid||priceObj.last_price||priceObj.ask||0;
+  // Candles must reflect LTP (last traded), NOT the user's bid/ask quote.
+  // Bid/ask are drawn as separate horizontal lines; mixing them into the
+  // candle stream shifts every bar by half-spread.
+  var lastP = priceObj.lastPrice||priceObj.last_price||priceObj.last||priceObj.ltp||0;
+  var b = priceObj.bid||0, a = priceObj.ask||0;
+  var midP = (b>0 && a>0) ? (b+a)/2 : 0;
+  var chartPrice = lastP > 0 ? lastP : (midP > 0 ? midP : (b||a||0));
   if(!chartPrice)return;
+  // Forward bid/ask to the inline-HTML's bid/ask line drawer (declared below).
+  if(typeof window.__updateBidAskLines==='function'){
+    try{ window.__updateBidAskLines(sym, b, a); }catch(e){}
+  }
   var now=Date.now();
   var keys=Object.keys(subscriptions);
   for(var k=0;k<keys.length;k++){
@@ -239,7 +249,17 @@ function changeSymbol(sym, ds){
   currentSymbol=sym;
   currentDataSource=ds;
   if(window.__tvWidget){
-    try{window.__tvWidget.activeChart().setSymbol(sym);}catch(e){}
+    try{
+      var ch = window.__tvWidget.activeChart();
+      // Clear stale bid/ask lines from the previous symbol — their price
+      // levels are meaningless on the new instrument.
+      if(window.__baLast){
+        try{ if(window.__baLast.bidId) ch.removeEntity(window.__baLast.bidId); }catch(e){}
+        try{ if(window.__baLast.askId) ch.removeEntity(window.__baLast.askId); }catch(e){}
+        window.__baLast = { bid: 0, ask: 0, t: 0, bidId: null, askId: null, sym: sym };
+      }
+      ch.setSymbol(sym);
+    }catch(e){}
   }
 }
 
@@ -333,6 +353,37 @@ function initChart(sym, ds, theme){
     overrides: themeOverrides(currentTheme)
   });
   window.__tvWidget=w;
+  // Bid (sell) / Ask (buy) horizontal lines — kept off the candle stream.
+  // Throttled to 1 call per ~250ms so we don't thrash createShape on every tick.
+  window.__baLast = { bid: 0, ask: 0, t: 0, bidId: null, askId: null, sym: '' };
+  window.__updateBidAskLines = function(sym, bid, ask){
+    if(!window.__tvWidget) return;
+    var now = Date.now();
+    if(sym !== window.__baLast.sym){ window.__baLast = { bid: 0, ask: 0, t: 0, bidId: null, askId: null, sym: sym }; }
+    if(now - window.__baLast.t < 250 && bid === window.__baLast.bid && ask === window.__baLast.ask) return;
+    window.__baLast.t = now;
+    var chart;
+    try { chart = window.__tvWidget.activeChart(); } catch(e){ return; }
+    if(!chart) return;
+    var apply = function(ref, price, color){
+      if(!price || price <= 0) return;
+      if(ref === 'bidId' && window.__baLast.bidId){
+        try { var s = chart.getShapeById(window.__baLast.bidId); if(s){ s.setPoints([{ price: price }]); return; } } catch(e){}
+      }
+      if(ref === 'askId' && window.__baLast.askId){
+        try { var s2 = chart.getShapeById(window.__baLast.askId); if(s2){ s2.setPoints([{ price: price }]); return; } } catch(e){}
+      }
+      try {
+        Promise.resolve(chart.createShape({ price: price }, {
+          shape: 'horizontal_line',
+          lock: true, disableSelection: true, disableSave: true, disableUndo: true,
+          overrides: { linecolor: color, linestyle: 2, linewidth: 1, showLabel: false, showPrice: true, textcolor: color }
+        })).then(function(id){ window.__baLast[ref] = id || null; }).catch(function(){});
+      } catch(e){}
+    };
+    if(bid > 0){ window.__baLast.bid = bid; apply('bidId', bid, '#ef5350'); }
+    if(ask > 0){ window.__baLast.ask = ask; apply('askId', ask, '#26a69a'); }
+  };
   w.onChartReady(function(){
     var le=document.getElementById('loading'); if(le) le.style.display='none';
     window.ReactNativeWebView.postMessage(JSON.stringify({type:'chartReady'}));
