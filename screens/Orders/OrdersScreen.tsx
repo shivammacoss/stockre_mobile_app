@@ -554,9 +554,19 @@ const OrdersScreen: React.FC = () => {
 
       {/* Body rows */}
       <View style={styles.cardBody}>
-        <Row label="Entry" value={`${(pos.avgPrice || pos.entryPrice || 0).toFixed(2)}`} colors={colors} />
-        {(tab === 'open' || tab === 'active') && <Row label="Current" value={`${liveCurrentPrice.toFixed(2)}`} colors={colors} />}
-        {tab === 'active' && (
+        {tab === 'pending' ? (
+          // Pending orders haven't filled yet — show the trigger price
+          // (the limit/stop level the user set) instead of an empty entry.
+          <Row
+            label="Limit Price"
+            value={`${(pos.triggerPrice ?? pos.avgPrice ?? pos.entryPrice ?? 0).toFixed(2)}`}
+            colors={colors}
+          />
+        ) : (
+          <Row label="Entry" value={`${(pos.avgPrice || pos.entryPrice || 0).toFixed(2)}`} colors={colors} />
+        )}
+        {(tab === 'open' || tab === 'active' || tab === 'pending') && <Row label="Current" value={`${liveCurrentPrice.toFixed(2)}`} colors={colors} />}
+        {(tab === 'active' || tab === 'pending') && (
           <>
             <Row label="S/L" value={pos.stopLoss != null ? String(pos.stopLoss) : '—'} colors={colors} />
             <Row label="T/P" value={pos.takeProfit != null ? String(pos.takeProfit) : '—'} colors={colors} />
