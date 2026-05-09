@@ -238,8 +238,25 @@ function updateLivePrice(sym, priceObj){
       sub.lastBarLow=Math.min(sub.lastBarLow,chartPrice);
       sub.callback({time:bt,open:sub.lastBarOpen,high:sub.lastBarHigh,low:sub.lastBarLow,close:chartPrice,volume:0});
     } else {
-      sub.lastBarTime=bt;sub.lastBarOpen=chartPrice;sub.lastBarHigh=chartPrice;sub.lastBarLow=chartPrice;
-      sub.callback({time:bt,open:chartPrice,high:chartPrice,low:chartPrice,close:chartPrice,volume:0});
+      // Bridge any gap between the last bar TV knows about and this new
+      // bucket — emit flat fill-forward bars so there's no visible empty
+      // space between historical and live candles. Cap at 200 buckets.
+      if(sub.lastBarTime!=null && bt > sub.lastBarTime+rm){
+        var seamPx = sub.lastBarOpen!=null ? ((sub.lastBarHigh+sub.lastBarLow)/2 || sub.lastBarOpen) : chartPrice;
+        var fillT = sub.lastBarTime+rm;
+        var added = 0;
+        while(fillT < bt && added < 200){
+          sub.callback({time:fillT,open:seamPx,high:seamPx,low:seamPx,close:seamPx,volume:0});
+          fillT += rm;
+          added += 1;
+        }
+      }
+      var seamOpen = sub.lastBarOpen!=null ? ((sub.lastBarHigh+sub.lastBarLow)/2 || sub.lastBarOpen) : chartPrice;
+      sub.lastBarTime=bt;
+      sub.lastBarOpen=seamOpen;
+      sub.lastBarHigh=Math.max(seamOpen,chartPrice);
+      sub.lastBarLow=Math.min(seamOpen,chartPrice);
+      sub.callback({time:bt,open:seamOpen,high:Math.max(seamOpen,chartPrice),low:Math.min(seamOpen,chartPrice),close:chartPrice,volume:0});
     }
   }
 }
