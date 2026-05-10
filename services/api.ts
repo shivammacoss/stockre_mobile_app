@@ -217,7 +217,9 @@ export const tradingAPI = {
   // Update per-leg SL/TP (netting mode, active legs only). Server route
   // is /api/user/trades/:tradeId/sltp — the previous /api/trades/legs/
   // path 404'd silently and per-leg SL/TP edits never landed.
-  updateTradeLeg: (tradeId: string, data: { userId: string; stopLoss: number | null; takeProfit: number | null }) =>
+  // userId is optional and ignored server-side (the leg's trade record
+  // already uniquely identifies the user). Kept for back-compat.
+  updateTradeLeg: (tradeId: string, data: { userId?: string; stopLoss: number | null; takeProfit: number | null }) =>
     api.put(`/api/user/trades/${tradeId}/sltp`, data),
 };
 

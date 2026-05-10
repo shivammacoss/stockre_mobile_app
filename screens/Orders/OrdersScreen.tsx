@@ -505,8 +505,25 @@ const OrdersScreen: React.FC = () => {
     return colors.t3;
   };
 
+  // Show ORIGINAL position side on closed-history rows. The engine writes
+  // Trade.side = OPPOSITE of position side for close trades (closing a
+  // long = sell-action), so the raw value made every closed BUY look like
+  // SELL. For 'close'/'partial_close' netting rows, flip back. Open rows /
+  // active legs / pending / binary pass through unchanged.
+  const positionSideForDisplay = (t: any): string => {
+    if (!t) return '';
+    const raw = String(t.side || '').toLowerCase();
+    const isClose = (t.mode === 'netting' || !t.mode)
+      && (t.type === 'close' || t.type === 'partial_close');
+    if (!isClose) return raw;
+    if (raw === 'sell') return 'buy';
+    if (raw === 'buy') return 'sell';
+    return raw;
+  };
+
   const renderCard = ({ item: pos, index }: { item: any; index: number }) => {
     const livePnl = (tab === 'open' || tab === 'active') ? calcLivePnl(pos) : (pos.profit || 0);
+    const displaySide = tab === 'history' ? positionSideForDisplay(pos) : (pos.side || '');
     const lp = prices[pos.symbol];
     const liveCurrentPrice = lp
       ? ((pos.side === 'buy' ? lp.bid : lp.ask) || lp.lastPrice || lp.last || pos.currentPrice || 0)
@@ -523,9 +540,9 @@ const OrdersScreen: React.FC = () => {
           <View style={[styles.modeBadge, { backgroundColor: modeMeta.bg, borderColor: modeMeta.color }]}>
             <Text style={{ color: modeMeta.color, fontSize: 10, fontWeight: '800' }}>{modeMeta.letter}</Text>
           </View>
-          <View style={[styles.sideBadge, { backgroundColor: pos.side === 'buy' ? colors.greenDim : colors.redDim }]}>
-            <Text style={{ color: pos.side === 'buy' ? colors.green : colors.red, fontSize: 10, fontWeight: '700' }}>
-              {(pos.side || 'BUY').toUpperCase()}
+          <View style={[styles.sideBadge, { backgroundColor: displaySide === 'buy' ? colors.greenDim : colors.redDim }]}>
+            <Text style={{ color: displaySide === 'buy' ? colors.green : colors.red, fontSize: 10, fontWeight: '700' }}>
+              {(displaySide || 'BUY').toUpperCase()}
             </Text>
           </View>
           <Text style={{ color: colors.t1, fontSize: 14, fontWeight: '700' }} numberOfLines={1}>{pos.symbol}</Text>

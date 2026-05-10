@@ -1,5 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 import { API_URL } from '../config';
+import { themedAlert } from '../components/ThemedAlert';
 
 type PriceCallback = (prices: Record<string, any>) => void;
 type ConnectionCallback = (connected: boolean) => void;
@@ -247,14 +248,57 @@ class SocketService {
 
     this.socket.on('expirySettlement', (data: any) => {
       if (__DEV__) console.log('[Socket] expirySettlement:', data?.message);
+      try {
+        themedAlert(
+          'Position Settled',
+          data?.message || 'A position was settled at expiry.',
+          [{ text: 'OK' }],
+          'info'
+        );
+      } catch (_) {}
     });
 
+    // marginCall / stopOut were previously console.log only — users had
+    // no visual indication that the engine just margin-called them or
+    // liquidated their positions. Surface both via the themed alert
+    // (matches the iOS-style toast on web).
     this.socket.on('marginCall', (data: any) => {
       if (__DEV__) console.log('[Socket] marginCall:', data?.message);
+      try {
+        themedAlert(
+          '⚠️ Margin Call',
+          data?.message || `Margin level at ${data?.marginLevel ?? '—'}%. Add funds or close positions.`,
+          [{ text: 'OK' }],
+          'warning'
+        );
+      } catch (_) {}
     });
 
     this.socket.on('stopOut', (data: any) => {
       if (__DEV__) console.log('[Socket] stopOut:', data?.message);
+      try {
+        themedAlert(
+          '🛑 Stop Out',
+          data?.message || `Stop Out: positions closed at margin level ${data?.marginLevel ?? '—'}%.`,
+          [{ text: 'OK' }],
+          'error'
+        );
+      } catch (_) {}
+    });
+
+    // Ledger-balance close + per-fill SL/TP closes — also surface so
+    // users know a trade closed even when the app is foregrounded on
+    // a different screen than Orders.
+    this.socket.on('ledgerLiquidation', (data: any) => {
+      if (__DEV__) console.log('[Socket] ledgerLiquidation:', data?.message);
+      try {
+        themedAlert(
+          'Positions Closed',
+          data?.message || 'Positions were closed due to account drawdown limit.',
+          [{ text: 'OK' }],
+          'warning'
+        );
+      } catch (_) {}
     });
 
     if (userId) this.joinUserRoom(userId);

@@ -13,6 +13,7 @@ import { useTheme } from '../../theme/ThemeContext';
 import { tradingAPI, userAPI } from '../../services/api';
 import { API_URL, CHART_LIB_URL } from '../../config';
 import AppHeader from '../../components/AppHeader';
+import { themedAlert } from '../../components/ThemedAlert';
 import { useSegmentSettings } from '../../hooks/useSegmentSettings';
 
 const SW = Dimensions.get('window').width;
@@ -716,7 +717,7 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
       if (tradingMode !== 'binary') {
         const r = validateChartLot(parseFloat(volume) || 0);
         if (!r.ok) {
-          Alert.alert('Cannot place order', r.message || 'Invalid lot size.');
+          themedAlert('Cannot place order', r.message || 'Invalid lot size.', [{ text: 'OK' }], 'error');
           setIsPlacingOrder(false);
           return;
         }
@@ -735,7 +736,7 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
           session: `${binaryExpiry}`,
         } as any);
         const expiryLabel = binaryExpiry >= 60 ? `${Math.floor(binaryExpiry / 60)}m` : `${binaryExpiry}s`;
-        Alert.alert('Success', `${binaryDirection.toUpperCase()} ₹${binaryAmount} on ${activeTab} - ${expiryLabel}`);
+        themedAlert('Trade Placed', `${binaryDirection.toUpperCase()} ₹${binaryAmount} on ${activeTab} (${expiryLabel})`, [{ text: 'OK' }], 'success');
       } else {
         // 'slm' → 'stop' for the engine, same as MarketScreen.
         const wireOrderType = orderType === 'slm' ? 'stop' : orderType;
@@ -789,14 +790,22 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
           exchange: fnoExchange,
           segment: fnoSegment,
           lotSize: lotHint,
+          // Always submit intraday — engine auto-rolls to carry-forward
+          // at market close if the wallet has CF margin (matches web).
+          session: 'intraday',
+          // Mobile doesn't expose a leverage selector yet — explicitly
+          // send 100 so the engine's Times-mode formula (effectiveMultiplier
+          // = X × leverage/100) gives the un-scaled multiplier. When a
+          // mobile leverage picker ships, replace this with the picked
+          // value to match the web behaviour.
+          leverage: 100,
           marketData: { bid: adjusted.bid || 0, ask: adjusted.ask || 0 },
           spreadPreApplied: wireOrderType === 'market',
         } as any);
-        Alert.alert('Success', `${orderSide.toUpperCase()} ${volume} lots ${activeTab} placed`);
       }
       closeSheet();
     } catch (e: any) {
-      Alert.alert('Order Error', e?.response?.data?.error || e?.response?.data?.message || e.message);
+      themedAlert('Order Error', e?.response?.data?.error || e?.response?.data?.message || e.message, [{ text: 'OK' }], 'error');
     } finally {
       setIsPlacingOrder(false);
     }
@@ -816,7 +825,7 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
       if (tradingMode !== 'binary') {
         const r = validateChartLot(parseFloat(volume) || 0);
         if (!r.ok) {
-          Alert.alert('Cannot place order', r.message || 'Invalid lot size.');
+          themedAlert('Cannot place order', r.message || 'Invalid lot size.', [{ text: 'OK' }], 'error');
           return;
         }
       }
@@ -862,12 +871,15 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
         exchange: fnoExchange,
         segment: fnoSegment,
         lotSize: lotHint,
+        // Same parity fields as the order-sheet path: always intraday (auto-CF).
+        session: 'intraday',
+        leverage: 100,
         marketData: { bid: adjusted.bid || 0, ask: adjusted.ask || 0 },
         spreadPreApplied: true,
       } as any);
-      Alert.alert('Success', `${side.toUpperCase()} ${volume} lots ${activeTab}`);
+      themedAlert('Trade Placed', `${side.toUpperCase()} ${volume} lots ${activeTab}`, [{ text: 'OK' }], 'success');
     } catch (e: any) {
-      Alert.alert('Error', e?.response?.data?.error || e.message);
+      themedAlert('Order Error', e?.response?.data?.error || e.message, [{ text: 'OK' }], 'error');
     }
   };
 
@@ -935,7 +947,7 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
             style={styles.addTabBtn}
             onPress={() => {
               // Quick add — could open a symbol picker
-              Alert.alert('Add Symbol', 'Navigate to Market tab and tap the chart icon on any instrument.');
+              themedAlert('Add Symbol', 'Navigate to Market tab and tap the chart icon on any instrument.', [{ text: 'OK' }], 'info');
             }}
           >
             <Text style={{ color: colors.t3, fontSize: 16 }}>+</Text>
