@@ -446,9 +446,52 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
   const bottomPad = Math.max(insets.bottom, 12);
   const webViewRef = useRef<WebView>(null);
 
-  // Chart tabs (like Image 2 top bar)
+  // Chart tabs (like Image 2 top bar) — persisted per-user via SecureStore
+  // so closing the app and re-opening keeps the user's tabs (web behaviour
+  // via localStorage). Key is scoped to the logged-in user so two accounts
+  // on the same device don't bleed across.
+  const _tabsKey = `Stocktre-chart-tabs:${user?.oderId || user?.id || 'guest'}`;
+  const _activeKey = `Stocktre-chart-active:${user?.oderId || user?.id || 'guest'}`;
   const [chartTabs, setChartTabs] = useState<string[]>(['BTCUSD']);
   const [activeTab, setActiveTab] = useState('BTCUSD');
+  const [_tabsHydrated, setTabsHydrated] = useState(false);
+
+  // Hydrate from SecureStore on mount.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const SecureStore = await import('expo-secure-store');
+        const [savedTabs, savedActive] = await Promise.all([
+          SecureStore.getItemAsync(_tabsKey),
+          SecureStore.getItemAsync(_activeKey),
+        ]);
+        if (cancelled) return;
+        if (savedTabs) {
+          const parsed = JSON.parse(savedTabs);
+          if (Array.isArray(parsed) && parsed.length) setChartTabs(parsed.map(String));
+        }
+        if (savedActive) setActiveTab(String(savedActive));
+      } catch (_) { /* fresh start on any failure */ }
+      finally { if (!cancelled) setTabsHydrated(true); }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.oderId, user?.id]);
+
+  // Persist on change (skip until first hydration so we don't overwrite
+  // saved tabs with the default on first paint).
+  useEffect(() => {
+    if (!_tabsHydrated) return;
+    (async () => {
+      try {
+        const SecureStore = await import('expo-secure-store');
+        await SecureStore.setItemAsync(_tabsKey, JSON.stringify(chartTabs));
+        await SecureStore.setItemAsync(_activeKey, activeTab);
+      } catch (_) { /* non-fatal */ }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chartTabs, activeTab, _tabsHydrated]);
   const [chartReady, setChartReady] = useState(false);
   // Surfaces "Chart couldn't load" in the overlay when the widget doesn't
   // confirm ready within a reasonable window OR the WebView itself errors.

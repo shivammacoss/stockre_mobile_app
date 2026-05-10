@@ -60,6 +60,13 @@ const OrdersScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [usdInrRate, setUsdInrRate] = useState(83);
 
+  // History date filter — quick range buttons (7d / 30d / 90d / All).
+  // Mirrors the web OrdersPage filter; mobile previously had no
+  // date-range UI so users had to scroll the entire history every
+  // time. Filter is applied client-side (server already returns the
+  // full set; no extra request).
+  const [historyRange, setHistoryRange] = useState<7 | 30 | 90 | 0>(0);
+
   // Edit SL/TP modal
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingPos, setEditingPos] = useState<any>(null);
@@ -408,11 +415,24 @@ const OrdersScreen: React.FC = () => {
     ]);
   };
 
+  // Apply the selected quick range to the history list. 0 = All time
+  // (no filter); otherwise filter to last N days from now using
+  // executedAt / closeTime / closedAt as the timestamp signal (server
+  // sets executedAt on every closed Trade row).
+  const filteredHistory = (() => {
+    if (!historyRange) return history;
+    const cutoff = Date.now() - historyRange * 24 * 60 * 60 * 1000;
+    return history.filter((t) => {
+      const ts = new Date(t?.executedAt || t?.closeTime || t?.closedAt || 0).getTime();
+      return Number.isFinite(ts) && ts >= cutoff;
+    });
+  })();
+
   const getData = () =>
     tab === 'open' ? positions
     : tab === 'active' ? activeTrades
     : tab === 'pending' ? pendingOrders
-    : tab === 'history' ? history
+    : tab === 'history' ? filteredHistory
     : cancelled;
 
   // Live P/L from socket prices (same formula as web MarketPage calculateProfit).
@@ -756,6 +776,66 @@ const OrdersScreen: React.FC = () => {
           )}
         </View>
       )}
+
+      {/* History header — date-range pills + Total Realized P/L card.
+          Mirrors the web OrdersPage history-section summary so users
+          see the rolled-up number without having to scroll/sum manually.
+          Reads trade.profit (already INR per recent engine fix). */}
+      {tab === 'history' && history.length > 0 && (() => {
+        const totalRealizedInr = filteredHistory.reduce(
+          (s, t) => s + (Number(t?.profit) || 0), 0
+        );
+        const wins = filteredHistory.filter((t) => (Number(t?.profit) || 0) > 0).length;
+        const losses = filteredHistory.filter((t) => (Number(t?.profit) || 0) < 0).length;
+        const RANGES: Array<{ key: 7 | 30 | 90 | 0; label: string }> = [
+          { key: 7, label: '7D' },
+          { key: 30, label: '30D' },
+          { key: 90, label: '90D' },
+          { key: 0, label: 'ALL' },
+        ];
+        return (
+          <View style={[styles.summaryCard, { backgroundColor: colors.bg2, borderColor: colors.border }]}>
+            {/* Quick range pills */}
+            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 10 }}>
+              {RANGES.map((r) => {
+                const active = historyRange === r.key;
+                return (
+                  <TouchableOpacity
+                    key={r.label}
+                    onPress={() => setHistoryRange(r.key)}
+                    style={{
+                      flex: 1, paddingVertical: 6, borderRadius: 8,
+                      backgroundColor: active ? colors.blue : 'transparent',
+                      borderWidth: 1, borderColor: active ? colors.blue : colors.border,
+                      alignItems: 'center'
+                    }}
+                  >
+                    <Text style={{ color: active ? '#fff' : colors.t2, fontSize: 11, fontWeight: '700' }}>{r.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <View style={styles.summaryRow}>
+              <View style={styles.summaryCell}>
+                <Text style={[styles.summaryLabel, { color: colors.t3 }]}>TOTAL REALIZED P/L</Text>
+                <Text style={[styles.summaryValue, { color: totalRealizedInr >= 0 ? colors.green : colors.red }]}>
+                  {formatTotalPnl(totalRealizedInr)}
+                </Text>
+              </View>
+              <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
+              <View style={styles.summaryCell}>
+                <Text style={[styles.summaryLabel, { color: colors.t3 }]}>TRADES</Text>
+                <Text style={[styles.summaryValue, { color: colors.t1 }]}>{filteredHistory.length}</Text>
+                <Text style={{ color: colors.t3, fontSize: 11, marginTop: 2 }}>
+                  <Text style={{ color: colors.green }}>{wins}W</Text>
+                  {' · '}
+                  <Text style={{ color: colors.red }}>{losses}L</Text>
+                </Text>
+              </View>
+            </View>
+          </View>
+        );
+      })()}
 
       {/* Card list */}
       {(
