@@ -64,14 +64,16 @@ export function useOTAUpdate(options?: { silentOnStartup?: boolean }) {
         msg.includes('Failed to check for update') ||
         msg.includes('manifest') ||
         e?.code === 'ERR_UPDATES_CHECK';
-      if (!silent) {
-        if (isNoUpdatePublished && showAlerts) {
+      // Use `showAlerts` (per-call) not `!silent` (hook-level startup flag).
+      // This ensures the manual "Check for updates" button always shows
+      // feedback, while the silent on-load auto-check stays quiet.
+      if (showAlerts) {
+        if (isNoUpdatePublished) {
           Alert.alert('Up to date', 'You are on the latest version.');
-        } else if (showAlerts) {
+        } else {
           Alert.alert('Update check failed', msg || 'Unknown error');
         }
       }
-      // Silent startup: never alert on check failures.
     } finally {
       setChecking(false);
     }
