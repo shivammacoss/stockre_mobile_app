@@ -43,30 +43,34 @@ const SEGMENT_TABS = [
   { key: 'Commodities', label: 'Commodities' },
 ];
 
-// Default instruments (same as web userConfig.js)
+// Default instruments (same as web userConfig.js).
+// `category` matches metaInstrumentCategoryToNettingCode() — without it
+// the segment resolver would return null for these bare seed rows
+// (no exchange field) and the order ticket would skip the segment-
+// settings fetch entirely (margin chip → "not set", caps not enforced).
 const DEFAULT_INSTRUMENTS: Record<string, any[]> = {
   'Forex': [
-    { symbol: 'EURUSD', name: 'Euro/USD' }, { symbol: 'GBPUSD', name: 'GBP/USD' },
-    { symbol: 'USDJPY', name: 'USD/JPY' }, { symbol: 'USDCHF', name: 'USD/CHF' },
-    { symbol: 'AUDUSD', name: 'AUD/USD' }, { symbol: 'USDCAD', name: 'USD/CAD' },
-    { symbol: 'NZDUSD', name: 'NZD/USD' }, { symbol: 'EURGBP', name: 'EUR/GBP' },
-    { symbol: 'EURJPY', name: 'EUR/JPY' }, { symbol: 'GBPJPY', name: 'GBP/JPY' },
-    { symbol: 'EURCHF', name: 'EUR/CHF' }, { symbol: 'EURAUD', name: 'EUR/AUD' },
-    { symbol: 'AUDNZD', name: 'AUD/NZD' }, { symbol: 'CADJPY', name: 'CAD/JPY' },
-    { symbol: 'AUDCAD', name: 'AUD/CAD' }, { symbol: 'EURNZD', name: 'EUR/NZD' },
-    { symbol: 'CHFJPY', name: 'CHF/JPY' }, { symbol: 'AUDCHF', name: 'AUD/CHF' },
-    { symbol: 'AUDJPY', name: 'AUD/JPY' }, { symbol: 'CADCHF', name: 'CAD/CHF' },
-    { symbol: 'EURCAD', name: 'EUR/CAD' }, { symbol: 'GBPNZD', name: 'GBP/NZD' },
-    { symbol: 'GBPCAD', name: 'GBP/CAD' }, { symbol: 'GBPCHF', name: 'GBP/CHF' },
-    { symbol: 'NZDCAD', name: 'NZD/CAD' }, { symbol: 'NZDJPY', name: 'NZD/JPY' },
+    { symbol: 'EURUSD', name: 'Euro/USD', category: 'forex' }, { symbol: 'GBPUSD', name: 'GBP/USD', category: 'forex' },
+    { symbol: 'USDJPY', name: 'USD/JPY', category: 'forex' }, { symbol: 'USDCHF', name: 'USD/CHF', category: 'forex' },
+    { symbol: 'AUDUSD', name: 'AUD/USD', category: 'forex' }, { symbol: 'USDCAD', name: 'USD/CAD', category: 'forex' },
+    { symbol: 'NZDUSD', name: 'NZD/USD', category: 'forex' }, { symbol: 'EURGBP', name: 'EUR/GBP', category: 'forex' },
+    { symbol: 'EURJPY', name: 'EUR/JPY', category: 'forex' }, { symbol: 'GBPJPY', name: 'GBP/JPY', category: 'forex' },
+    { symbol: 'EURCHF', name: 'EUR/CHF', category: 'forex' }, { symbol: 'EURAUD', name: 'EUR/AUD', category: 'forex' },
+    { symbol: 'AUDNZD', name: 'AUD/NZD', category: 'forex' }, { symbol: 'CADJPY', name: 'CAD/JPY', category: 'forex' },
+    { symbol: 'AUDCAD', name: 'AUD/CAD', category: 'forex' }, { symbol: 'EURNZD', name: 'EUR/NZD', category: 'forex' },
+    { symbol: 'CHFJPY', name: 'CHF/JPY', category: 'forex' }, { symbol: 'AUDCHF', name: 'AUD/CHF', category: 'forex' },
+    { symbol: 'AUDJPY', name: 'AUD/JPY', category: 'forex' }, { symbol: 'CADCHF', name: 'CAD/CHF', category: 'forex' },
+    { symbol: 'EURCAD', name: 'EUR/CAD', category: 'forex' }, { symbol: 'GBPNZD', name: 'GBP/NZD', category: 'forex' },
+    { symbol: 'GBPCAD', name: 'GBP/CAD', category: 'forex' }, { symbol: 'GBPCHF', name: 'GBP/CHF', category: 'forex' },
+    { symbol: 'NZDCAD', name: 'NZD/CAD', category: 'forex' }, { symbol: 'NZDJPY', name: 'NZD/JPY', category: 'forex' },
   ],
   'Indices': [
-    { symbol: 'US30', name: 'Dow Jones' }, { symbol: 'US500', name: 'S&P 500' },
-    { symbol: 'UK100', name: 'FTSE 100' },
+    { symbol: 'US30', name: 'Dow Jones', category: 'indices' }, { symbol: 'US500', name: 'S&P 500', category: 'indices' },
+    { symbol: 'UK100', name: 'FTSE 100', category: 'indices' },
   ],
   'Commodities': [
-    { symbol: 'XAUUSD', name: 'Gold' }, { symbol: 'XAGUSD', name: 'Silver' },
-    { symbol: 'USOIL', name: 'WTI Crude' }, { symbol: 'UKOIL', name: 'Brent Crude' },
+    { symbol: 'XAUUSD', name: 'Gold', category: 'metals' }, { symbol: 'XAGUSD', name: 'Silver', category: 'metals' },
+    { symbol: 'USOIL', name: 'WTI Crude', category: 'energy' }, { symbol: 'UKOIL', name: 'Brent Crude', category: 'energy' },
   ],
   'Crypto Perpetual': [
     { symbol: 'BTCUSD', name: 'Bitcoin' }, { symbol: 'ETHUSD', name: 'Ethereum' },
@@ -983,7 +987,11 @@ const MarketScreen: React.FC = () => {
       <View style={[styles.bottomBar, { backgroundColor: colors.bg1, borderTopColor: colors.border }]}>
         <Text style={{ color: colors.blue, fontSize: 11, fontWeight: '600' }}>{orderSymbol || 'XAUUSD'}</Text>
         <Text style={{ color: colors.t2, fontSize: 11 }}>
-          Bal ₹{Number(walletINR.balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          {/* `wallet.balance` is the INR trading balance (engine debits this).
+              `walletINR.balance` is a legacy historical shell (lifetime
+              net deposits) — kept as a fallback only while `wallet` is
+              still loading after a fresh mount. */}
+          Bal ₹{Number(wallet?.balance ?? walletINR.balance ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
         </Text>
       </View>
     </SafeAreaView>
@@ -1228,7 +1236,11 @@ const MarketScreen: React.FC = () => {
                     const ep = orderSide === 'buy' ? (tradeQuote.ask || orderPrice?.ask || 0) : (tradeQuote.bid || orderPrice?.bid || 0);
                     const vol = parseFloat(volume) || 0;
                     const lotSize = activeLotSize > 0 ? activeLotSize : 1;
-                    const available = Number(walletINR?.balance || 0);
+                    // wallet.balance = actual INR trading balance (engine
+                    // source of truth). walletINR.balance is a legacy
+                    // shell (lifetime deposits) — fall back only while
+                    // wallet hasn't loaded yet.
+                    const available = Number(wallet?.balance ?? walletINR?.balance ?? 0);
 
                     const mode = (segmentSettings?.marginCalcMode as 'fixed' | 'percent' | 'times' | undefined) || 'fixed';
                     const xIntraday = getSegmentMarginX(segmentSettings, orderSegmentCode, orderSide, 'intraday');

@@ -55,20 +55,37 @@ const MAJOR_CRYPTO_PERP_BASES = [
   'BTC', 'ETH', 'SOL', 'XRP', 'BNB', 'ADA', 'DOGE', 'TRX',
   'LTC', 'AVAX', 'DOT', 'LINK', 'MATIC', 'UNI', 'ATOM', 'XLM',
 ];
+// Common forex pairs — used both as a *negative* guard (sym ∈ pairs ⇒
+// not crypto-perp) and as a *positive* route (sym ∈ pairs ⇒ FOREX).
+// Without the positive route, ChartScreen calls useSegmentSettings with
+// inst=null, so the only signal the resolver gets is the symbol itself
+// — and bare EUR/GBP-cross pairs (EURGBP, EURJPY) don't match any
+// existing branch and used to fall through to null.
 const FOREX_PAIRS = new Set([
+  // 7 majors
   'EURUSD', 'GBPUSD', 'AUDUSD', 'NZDUSD', 'USDCAD', 'USDCHF', 'USDJPY',
+  // EUR crosses
+  'EURGBP', 'EURJPY', 'EURCHF', 'EURAUD', 'EURNZD', 'EURCAD',
+  // GBP crosses
+  'GBPJPY', 'GBPAUD', 'GBPCAD', 'GBPCHF', 'GBPNZD',
+  // AUD crosses
+  'AUDJPY', 'AUDCAD', 'AUDCHF', 'AUDNZD',
+  // Other crosses
+  'CHFJPY', 'NZDJPY', 'CADJPY', 'CADCHF', 'NZDCAD', 'NZDCHF',
 ]);
 
 // Spot metals / energy that mobile clients ship with no `exchange` /
 // `category` set on the watchlist row (DEFAULT_INSTRUMENTS in
 // MarketScreen). Without this the resolver would return null for
-// XAUUSD / XAGUSD and the segment-settings fetch would be skipped —
-// leaving the order ticket showing the unconfigured-mode fallback
-// even after admin sets a netting margin for COMMODITIES.
+// XAUUSD / XAGUSD / USOIL / UKOIL and the segment-settings fetch
+// would be skipped — leaving the order ticket showing the
+// unconfigured-mode fallback even after admin sets a netting margin
+// for COMMODITIES.
 const KNOWN_COMMODITY_SYMBOLS = new Set([
   'XAUUSD', 'XAGUSD', 'XPTUSD', 'XPDUSD',
   'GOLD', 'SILVER',
   'OIL', 'BRENT', 'WTI', 'WTIUSD', 'BRENTUSD',
+  'USOIL', 'UKOIL', 'USOIL.C', 'UKOIL.C',
   'NATGAS', 'COPPER',
 ]);
 
@@ -122,6 +139,10 @@ export function resolveSegmentCode(
   const fromCategory = categoryToSegmentCode(inst?.category);
   if (fromCategory) return fromCategory;
   if (KNOWN_COMMODITY_SYMBOLS.has(sym)) return 'COMMODITIES';
+  // Positive forex route — covers ChartScreen (inst=null) and any bare
+  // watchlist row that didn't get a category. Must run after the
+  // crypto-perp guard so XAUUSDT / BTCUSDT don't end up here.
+  if (FOREX_PAIRS.has(sym)) return 'FOREX';
 
   if (ex === 'INDICES') return 'INDICES';
   if (ex === 'FOREX') return 'FOREX';
