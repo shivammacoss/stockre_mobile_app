@@ -59,6 +59,30 @@ const FOREX_PAIRS = new Set([
   'EURUSD', 'GBPUSD', 'AUDUSD', 'NZDUSD', 'USDCAD', 'USDCHF', 'USDJPY',
 ]);
 
+// Spot metals / energy that mobile clients ship with no `exchange` /
+// `category` set on the watchlist row (DEFAULT_INSTRUMENTS in
+// MarketScreen). Without this the resolver would return null for
+// XAUUSD / XAGUSD and the segment-settings fetch would be skipped —
+// leaving the order ticket showing the unconfigured-mode fallback
+// even after admin sets a netting margin for COMMODITIES.
+const KNOWN_COMMODITY_SYMBOLS = new Set([
+  'XAUUSD', 'XAGUSD', 'XPTUSD', 'XPDUSD',
+  'GOLD', 'SILVER',
+  'OIL', 'BRENT', 'WTI', 'WTIUSD', 'BRENTUSD',
+  'NATGAS', 'COPPER',
+]);
+
+/** Mirror of web `metaInstrumentCategoryToNettingCode()` in MarketPage.jsx. */
+function categoryToSegmentCode(category: unknown): SegmentCode | null {
+  const c = String(category || '').toLowerCase();
+  if (!c) return null;
+  if (c === 'forex' || c === 'forex_yen') return 'FOREX';
+  if (c === 'stocks') return 'STOCKS';
+  if (c === 'indices') return 'INDICES';
+  if (c === 'metals' || c === 'energy' || c === 'commodity' || c === 'commodities') return 'COMMODITIES';
+  return null;
+}
+
 /** Mirror of the web `resolveSegmentApiName()` in MarketPage.jsx. */
 export function resolveSegmentCode(
   symbol: string | null | undefined,
@@ -88,6 +112,16 @@ export function resolveSegmentCode(
     const base = sym.replace(/USDT$/i, '');
     if (MAJOR_CRYPTO_PERP_BASES.includes(base)) return 'CRYPTO_PERPETUAL';
   }
+
+  // Mirror of the web's instrumentsByCategory + metaInstrumentCategoryToNettingCode
+  // path: prefer an explicit category on the instrument row, then fall
+  // back to a hardcoded ticker list for symbols mobile ships with no
+  // `category` field (e.g. XAUUSD/XAGUSD live in DEFAULT_INSTRUMENTS as
+  // bare {symbol,name}). Must run before the `ex === 'INDICES'` etc.
+  // branches so the bare watchlist row still routes correctly.
+  const fromCategory = categoryToSegmentCode(inst?.category);
+  if (fromCategory) return fromCategory;
+  if (KNOWN_COMMODITY_SYMBOLS.has(sym)) return 'COMMODITIES';
 
   if (ex === 'INDICES') return 'INDICES';
   if (ex === 'FOREX') return 'FOREX';
