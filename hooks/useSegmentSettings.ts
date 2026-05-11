@@ -126,6 +126,79 @@ const CASH_EQ_CODES = new Set<SegmentCode>(['NSE_EQ', 'BSE_EQ']);
  * server applied an admin-configured spread on top — the position
  * opened at a price different from what was shown.
  */
+// Pick the effective per-lot/per-unit margin value (X) for the current
+// order context. Mirrors the web getSegmentMarginXForSession(): option
+// segments use optionBuy/optionSell fields with a fall-through to the
+// base intraday/overnight values; futures/equity use the base.
+// `session` is 'intraday' or 'carryforward' — which column to read.
+export function getSegmentMarginX(
+  settings: SegmentSettings | null | undefined,
+  segment: SegmentCode | null | undefined,
+  side: 'buy' | 'sell',
+  session: 'intraday' | 'carryforward' = 'intraday',
+): number {
+  if (!settings || !segment) return 0;
+  const isOpt = ['NSE_OPT', 'BSE_OPT', 'MCX_OPT', 'CRYPTO_OPTIONS'].includes(segment);
+  if (isOpt) {
+    if (side === 'buy') {
+      const raw = session === 'intraday' ? settings.optionBuyIntraday : settings.optionBuyOvernight;
+      if (Number(raw) > 0) return Number(raw);
+    } else {
+      const raw = session === 'intraday' ? settings.optionSellIntraday : settings.optionSellOvernight;
+      if (Number(raw) > 0) return Number(raw);
+    }
+  }
+  const raw = session === 'intraday' ? settings.intradayMargin : settings.overnightMargin;
+  return Number(raw) || 0;
+}
+
+export type MarginCalcMode = 'fixed' | 'percent' | 'times';
+
+/** Mirror of web `applyNettingFixed()` from MarketPage.jsx — turns an
+ *  admin-configured X plus the chosen mode into an INR margin amount. */
+export function computeNettingMargin(
+  X: number,
+  mode: MarginCalcMode | undefined | null,
+  vol: number,
+  price: number,
+  lotSize: number,
+): number | null {
+  const r = Number(X);
+  if (!(r > 0)) return null;
+  const quantity = vol * (lotSize > 0 ? lotSize : 1);
+  const m: MarginCalcMode = mode === 'percent' || mode === 'times' ? mode : 'fixed';
+  switch (m) {
+    case 'percent': {
+      const pct = Math.min(r, 100);
+      return quantity * price * (pct / 100);
+    }
+    case 'times': {
+      // Mobile has no leverage selector — full multiplier (web uses leverage/100).
+      return (quantity * price) / r;
+    }
+    case 'fixed':
+    default:
+      return r * vol;
+  }
+}
+
+/** Format the "Margin Mode" chip label + accent color. Mirrors the web
+ *  formatting in MarketPage.jsx STEP 8. */
+export function formatMarginMode(
+  mode: MarginCalcMode | undefined | null,
+  X: number,
+): { label: string; color: string } {
+  const has = X > 0;
+  const m: MarginCalcMode = mode === 'percent' || mode === 'times' ? mode : 'fixed';
+  if (m === 'times') {
+    return { label: has ? `Times — ${X}X` : 'Times — not set', color: '#a78bfa' };
+  }
+  if (m === 'percent') {
+    return { label: has ? `Percent — ${X}%` : 'Percent — not set', color: '#f59e0b' };
+  }
+  return { label: has ? `Fixed — ₹${X}/lot` : 'Fixed — not set', color: '#94a3b8' };
+}
+
 export function applySegmentSpread(
   rawBid: number,
   rawAsk: number,

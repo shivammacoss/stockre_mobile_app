@@ -14,7 +14,12 @@ import { tradingAPI, userAPI } from '../../services/api';
 import { API_URL, CHART_LIB_URL } from '../../config';
 import AppHeader from '../../components/AppHeader';
 import { themedAlert } from '../../components/ThemedAlert';
-import { useSegmentSettings } from '../../hooks/useSegmentSettings';
+import {
+  useSegmentSettings,
+  getSegmentMarginX,
+  computeNettingMargin,
+  formatMarginMode,
+} from '../../hooks/useSegmentSettings';
 
 const SW = Dimensions.get('window').width;
 const SH = Dimensions.get('window').height;
@@ -696,7 +701,7 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
   // the buy/sell action enforces admin-set min lot / per-order cap /
   // max lot before hitting the engine. Mirrors the web MarketPage
   // pre-trade validation.
-  const { settings: chartSegmentSettings, validateLot: validateChartLot, adjustQuote: adjustChartQuote } = useSegmentSettings(
+  const { segment: chartSegmentCode, settings: chartSegmentSettings, validateLot: validateChartLot, adjustQuote: adjustChartQuote } = useSegmentSettings(
     activeTab,
     null,
     user?.oderId,
@@ -1203,13 +1208,23 @@ const ChartScreen: React.FC<ChartScreenProps> = ({ route }) => {
                 {(() => {
                   const ep = orderSide === 'buy' ? (chartTradeQuote.ask || currentPrice?.ask || 0) : (chartTradeQuote.bid || currentPrice?.bid || 0);
                   const vol = parseFloat(volume) || 0;
-                  const notional = ep * vol;
-                  const cfm = notional > 0 ? `₹${notional.toFixed(2)}` : '—';
+                  // Chart-side panel doesn't have an instrument record handy
+                  // (activeTab is just a tradingsymbol string), so lotSize
+                  // defaults to 1. F&O / index callers should rely on the
+                  // Market screen for accurate per-lot margin in % / X mode.
+                  const lotSize = 1;
+                  const mode = (chartSegmentSettings?.marginCalcMode as 'fixed' | 'percent' | 'times' | undefined) || 'fixed';
+                  const xIntraday = getSegmentMarginX(chartSegmentSettings, chartSegmentCode, orderSide, 'intraday');
+                  const xCarry = getSegmentMarginX(chartSegmentSettings, chartSegmentCode, orderSide, 'carryforward');
+                  const modeChip = formatMarginMode(mode, xIntraday);
+                  const fmt = (v: number | null) => (v != null && v > 0 ? `₹${v.toFixed(2)}` : '—');
+                  const intradayMargin = computeNettingMargin(xIntraday, mode, vol, ep, lotSize);
+                  const carryMargin = computeNettingMargin(xCarry, mode, vol, ep, lotSize);
                   return (
                     <View style={{ backgroundColor: colors.bg3, borderRadius: 10, padding: 12, marginTop: 8, marginBottom: 14 }}>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}><Text style={{ color: colors.t2, fontSize: 11 }}>Margin Mode</Text><Text style={{ color: colors.t2, fontSize: 11, fontWeight: '600' }}>Fixed — ₹100/lot</Text></View>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}><Text style={{ color: colors.t2, fontSize: 11 }}>Intraday Margin</Text><Text style={{ color: '#3b82f6', fontSize: 11, fontWeight: '600' }}>₹{(vol * 100).toFixed(2)}</Text></View>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><Text style={{ color: colors.t2, fontSize: 11 }}>Carryforward Margin</Text><Text style={{ color: '#3b82f6', fontSize: 11, fontWeight: '600' }}>{cfm}</Text></View>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}><Text style={{ color: colors.t2, fontSize: 11 }}>Margin Mode</Text><Text style={{ color: modeChip.color, fontSize: 11, fontWeight: '600' }}>{modeChip.label}</Text></View>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}><Text style={{ color: colors.t2, fontSize: 11 }}>Intraday Margin</Text><Text style={{ color: '#3b82f6', fontSize: 11, fontWeight: '600' }}>{fmt(intradayMargin)}</Text></View>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><Text style={{ color: colors.t2, fontSize: 11 }}>Carryforward Margin</Text><Text style={{ color: '#3b82f6', fontSize: 11, fontWeight: '600' }}>{fmt(carryMargin)}</Text></View>
                     </View>
                   );
                 })()}

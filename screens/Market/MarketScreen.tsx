@@ -12,7 +12,12 @@ import { useTheme } from '../../theme/ThemeContext';
 import { tradingAPI, instrumentsAPI, userAPI, walletAPI } from '../../services/api';
 import AppHeader from '../../components/AppHeader';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { useSegmentSettings } from '../../hooks/useSegmentSettings';
+import {
+  useSegmentSettings,
+  getSegmentMarginX,
+  computeNettingMargin,
+  formatMarginMode,
+} from '../../hooks/useSegmentSettings';
 import { useSpreadCatalog } from '../../hooks/useSpreadCatalog';
 
 const SW = Dimensions.get('window').width;
@@ -705,7 +710,7 @@ const MarketScreen: React.FC = () => {
   // block flags. Without this the mobile ticket was using its own
   // hardcoded min lot (1 / 0.01) and ignoring whatever the admin set
   // (e.g. min lot 1 was bypassed by 0.1-lot orders).
-  const { settings: segmentSettings, validateLot, adjustQuote } = useSegmentSettings(
+  const { segment: orderSegmentCode, settings: segmentSettings, validateLot, adjustQuote } = useSegmentSettings(
     orderSymbol,
     activeInstrument,
     user?.oderId,
@@ -1162,27 +1167,39 @@ const MarketScreen: React.FC = () => {
                     <Ionicons name={showTP ? 'chevron-up' : 'chevron-down'} size={16} color={colors.t3} />
                   </TouchableOpacity>
                   {showTP && <TextInput style={[styles.input, { backgroundColor: colors.bg3, color: colors.t1, borderColor: colors.border, marginBottom: 8 }]} value={takeProfit} onChangeText={setTakeProfit} keyboardType="decimal-pad" placeholder="Optional" placeholderTextColor={colors.t3} />}
-                  {/* Margin info card */}
+                  {/* Margin info card — reads admin-configured marginCalcMode + X
+                      from segmentSettings; previously this was hardcoded to
+                      "Fixed · ₹100/lot" which silently lied for any segment
+                      switched to percent / times mode. */}
                   {(() => {
                     const ep = orderSide === 'buy' ? (tradeQuote.ask || orderPrice?.ask || 0) : (tradeQuote.bid || orderPrice?.bid || 0);
                     const vol = parseFloat(volume) || 0;
-                    const notional = ep * vol;
-                    const intraday = notional > 0 ? `₹${notional.toFixed(2)}` : '—';
+                    const lotSize = activeLotSize > 0 ? activeLotSize : 1;
                     const available = Number(walletINR?.balance || 0);
+
+                    const mode = (segmentSettings?.marginCalcMode as 'fixed' | 'percent' | 'times' | undefined) || 'fixed';
+                    const xIntraday = getSegmentMarginX(segmentSettings, orderSegmentCode, orderSide, 'intraday');
+                    const xCarry = getSegmentMarginX(segmentSettings, orderSegmentCode, orderSide, 'carryforward');
+                    const modeChip = formatMarginMode(mode, xIntraday);
+
+                    const fmt = (v: number | null) => (v != null && v > 0 ? `₹${v.toFixed(2)}` : '—');
+                    const intradayMargin = computeNettingMargin(xIntraday, mode, vol, ep, lotSize);
+                    const carryMargin = computeNettingMargin(xCarry, mode, vol, ep, lotSize);
+
                     return (
                       <View style={[styles.marginCard, { backgroundColor: colors.bg2, borderColor: colors.border }]}>
                         <View style={styles.marginRow}>
                           <Text style={{ color: colors.t3, fontSize: 11 }}>Margin Mode</Text>
-                          <Text style={{ color: colors.t2, fontSize: 12, fontWeight: '600' }}>Fixed · ₹100/lot</Text>
+                          <Text style={{ color: modeChip.color, fontSize: 12, fontWeight: '600' }}>{modeChip.label}</Text>
                         </View>
                         <View style={[styles.marginDivider, { backgroundColor: colors.border }]} />
                         <View style={styles.marginRow}>
                           <Text style={{ color: colors.t3, fontSize: 11 }}>Intraday Margin</Text>
-                          <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700' }}>₹{(vol * 100).toFixed(2)}</Text>
+                          <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700' }}>{fmt(intradayMargin)}</Text>
                         </View>
                         <View style={styles.marginRow}>
                           <Text style={{ color: colors.t3, fontSize: 11 }}>Carryforward Margin</Text>
-                          <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700' }}>{intraday}</Text>
+                          <Text style={{ color: colors.blue, fontSize: 13, fontWeight: '700' }}>{fmt(carryMargin)}</Text>
                         </View>
                         <View style={[styles.marginDivider, { backgroundColor: colors.border }]} />
                         <View style={styles.marginRow}>
