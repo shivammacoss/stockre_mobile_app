@@ -551,17 +551,33 @@ const OrdersScreen: React.FC = () => {
   // Show ORIGINAL position side on closed-history rows. The engine writes
   // Trade.side = OPPOSITE of position side for close trades (closing a
   // long = sell-action), so the raw value made every closed BUY look like
-  // SELL. For 'close'/'partial_close' netting rows, flip back. Open rows /
-  // active legs / pending / binary pass through unchanged.
+  // SELL. For 'close'/'partial_close' netting rows (and synthetic history
+  // parents), flip back. Binary 'up'/'down' won't match either branch so
+  // they pass through unchanged.
   const positionSideForDisplay = (t: any): string => {
     if (!t) return '';
     const raw = String(t.side || '').toLowerCase();
-    const isClose = (t.mode === 'netting' || !t.mode)
-      && (t.type === 'close' || t.type === 'partial_close');
+    const isClose =
+      t?.type === 'close' ||
+      t?.type === 'partial_close' ||
+      t?.isHistoryParent === true;
     if (!isClose) return raw;
     if (raw === 'sell') return 'buy';
     if (raw === 'buy') return 'sell';
     return raw;
+  };
+
+  // Compact "DD MMM HH:mm" — used on history rows + entries summary so
+  // open/close times fit on one line on phone widths.
+  const fmtTradeTs = (ts: any): string => {
+    if (!ts) return '—';
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return '—';
+    return d.toLocaleString('en-IN', {
+      day: '2-digit', month: 'short',
+      hour: '2-digit', minute: '2-digit',
+      hour12: false,
+    });
   };
 
   const renderCard = ({ item: pos, index }: { item: any; index: number }) => {
@@ -665,6 +681,22 @@ const OrdersScreen: React.FC = () => {
           );
         })()}
         {tab === 'history' && pos.closePrice != null && <Row label="Close" value={`${pos.closePrice.toFixed(2)}`} colors={colors} />}
+        {tab === 'history' && (() => {
+          // Server engine writes synthetic history parents with
+          // executedAt = original openTime and closedAt = closeTime, so
+          // for a fully-closed grouped row we get both timestamps. For a
+          // standalone partial_close (ungrouped), executedAt is the
+          // partial close time and closedAt may be null/same — we still
+          // render both so the user can see exactly when the slice ran.
+          const openedTs = pos.openTime || pos.openedAt || pos.executedAt || pos.createdAt;
+          const closedTs = pos.closeTime || pos.closedAt || pos.executedAt;
+          return (
+            <>
+              <Row label="Opened" value={fmtTradeTs(openedTs)} colors={colors} />
+              <Row label="Closed" value={fmtTradeTs(closedTs)} colors={colors} />
+            </>
+          );
+        })()}
         {tab === 'history' && pos.remark && (
           <View style={styles.infoRow}>
             <Text style={{ color: colors.t3, fontSize: 12 }}>Remark</Text>
@@ -955,9 +987,16 @@ const OrdersScreen: React.FC = () => {
                 const fmtPx = (v: number) => `${cs}${Number(v || 0).toLocaleString(legsIsIndian ? 'en-IN' : 'en-US', { minimumFractionDigits: pxDp, maximumFractionDigits: pxDp })}`;
                 const pnl = Number(legsPosition?.profit || 0);
                 const fmtPnl = `${pnl >= 0 ? '+' : '-'}${cs}${Math.abs(pnl).toLocaleString(legsIsIndian ? 'en-IN' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                // Use the same flip helper so a closed BUY shows BUY here
+                // (not the engine-flipped SELL stored on the close row).
+                const summarySide = legsPosition?.isClosed
+                  ? positionSideForDisplay(legsPosition)
+                  : String(legsPosition?.side || '').toLowerCase();
+                const summaryOpened = legsPosition?.openTime || legsPosition?.openedAt || legsPosition?.executedAt || legsPosition?.createdAt;
+                const summaryClosed = legsPosition?.closeTime || legsPosition?.closedAt;
                 return (
                   <View style={{ padding: 14, backgroundColor: colors.bg2, flexDirection: 'row', flexWrap: 'wrap', gap: 14 }}>
-                    <SummaryCell label="Side" value={(legsPosition?.side || '').toUpperCase()} valueColor={legsPosition?.side === 'buy' ? colors.green : colors.red} colors={colors} />
+                    <SummaryCell label="Side" value={(summarySide || '').toUpperCase()} valueColor={summarySide === 'buy' ? colors.green : colors.red} colors={colors} />
                     <SummaryCell label="Total Volume" value={String(parseFloat(Number(legsPosition?.volume || 0).toFixed(4)))} colors={colors} />
                     <SummaryCell label="Avg Entry" value={fmtPx(Number(legsPosition?.entryPrice || 0))} colors={colors} />
                     <SummaryCell label={legsPosition?.isClosed ? 'Close Price' : 'Current'} value={fmtPx(Number(legsPosition?.currentPrice || 0))} colors={colors} />
@@ -967,6 +1006,10 @@ const OrdersScreen: React.FC = () => {
                       valueColor={pnl >= 0 ? colors.green : colors.red}
                       colors={colors}
                     />
+                    <SummaryCell label="Opened" value={fmtTradeTs(summaryOpened)} colors={colors} />
+                    {legsPosition?.isClosed && (
+                      <SummaryCell label="Closed" value={fmtTradeTs(summaryClosed)} colors={colors} />
+                    )}
                   </View>
                 );
               })()}

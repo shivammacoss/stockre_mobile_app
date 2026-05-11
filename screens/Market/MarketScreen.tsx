@@ -11,7 +11,7 @@ import { useSocket } from '../../contexts/SocketContext';
 import { useTheme } from '../../theme/ThemeContext';
 import { tradingAPI, instrumentsAPI, userAPI, walletAPI } from '../../services/api';
 import AppHeader from '../../components/AppHeader';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import {
   useSegmentSettings,
   getSegmentMarginX,
@@ -244,6 +244,24 @@ const MarketScreen: React.FC = () => {
     setWalletINR({ balance: 0 });
     loadData();
   }, [user?.id, user?.oderId]);
+
+  // Refetch wallet whenever this screen regains focus. Without this, a
+  // deposit made on the Wallet screen (or a trade settled / margin
+  // released elsewhere) wouldn't reflect on the order ticket's
+  // "Available Margin" — it stayed at whatever value was cached on the
+  // initial mount fetch (commonly 0 for fresh logins). Skip the very
+  // first focus because the mount effect above already runs loadData().
+  const isFirstFocus = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      if (isFirstFocus.current) {
+        isFirstFocus.current = false;
+        return;
+      }
+      fetchWallet();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id, user?.oderId])
+  );
 
   const loadData = async () => {
     setLoading(true);
@@ -687,6 +705,9 @@ const MarketScreen: React.FC = () => {
         } as any);
         Alert.alert('Success', `${orderSide.toUpperCase()} ${volume} lots ${orderSymbol} placed`);
       }
+      // Refresh wallet so the next order ticket open shows the
+      // post-trade Available Margin (engine debited margin server-side).
+      fetchWallet();
       closeSheet();
     } catch (e: any) {
       Alert.alert('Order Error', e?.response?.data?.error || e?.response?.data?.message || e.message);
