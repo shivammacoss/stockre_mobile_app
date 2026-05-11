@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   RefreshControl, Dimensions, Linking, ActivityIndicator, Image,
@@ -100,8 +100,10 @@ const HomeScreen: React.FC = () => {
         setBanners(list.filter((b: any) => b?.imageData || b?.imageUrl));
       })
       .catch(() => {});
-    // Poll every 5s for live wallet + positions
-    pollRef.current = setInterval(loadData, 5000);
+    // Poll every 15s — socket position/wallet events cover real-time
+    // updates; hammering the API every 5s with 3 parallel requests caused
+    // noticeable jank on mid-range devices.
+    pollRef.current = setInterval(loadData, 15000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [loadData, loadNews]);
 
@@ -114,74 +116,81 @@ const HomeScreen: React.FC = () => {
     return () => clearInterval(id);
   }, [banners.length]);
 
-  // Re-fetch positions on socket position updates
+  // Socket event handler — mirrors web UserLayout behaviour:
+  //   walletUpdate  → apply wallet directly from payload (zero API latency)
+  //   everything else → refetch positions + wallet via API
   useEffect(() => {
-    const unsub = onPositionUpdate(() => { loadData(); });
+    const unsub = onPositionUpdate((data: any) => {
+      if (data?.type === 'walletUpdate' && data?.wallet) {
+        // Server pushed a fresh wallet object — apply instantly, no round-trip.
+        const w = data.wallet;
+        if (w?.balance != null || w?.margin != null) {
+          setWallet((prev: any) => ({ ...(prev || {}), ...w }));
+        }
+      } else {
+        // Position opened/closed/settled — refetch positions + wallet.
+        loadData();
+      }
+    });
     return unsub;
   }, [onPositionUpdate, loadData]);
 
   const onRefresh = async () => { setRefreshing(true); await Promise.all([loadData(), loadNews(), refreshUser()]); setRefreshing(false); };
 
-  // ── Live PnL + equity calculation (mirrors web UserLayout) ──
   const n = (v: any) => Number(v || 0);
-  const rate = usdInrRate;
-  const bal = n(wallet?.balance ?? user?.wallet?.balance);
-  const cr = n(wallet?.credit);
 
-  let totalPnl = 0;
-  let totalMargin = 0;
-  positions.forEach((pos: any) => {
-    if (pos.status === 'closed') return;
-    totalMargin += n(pos.marginUsed || pos.margin);
-    const sym = pos.symbol || '';
-    const lp = prices[sym];
-    if (!lp || (!lp.bid && !lp.ask)) return;
-    // Adjust the mark-side price by the segment spread (matches web
-    // UserLayout). Without this floating P/L undercounted the spread
-    // because entries are stored already-adjusted but the mark side
-    // used the raw tick.
-    const _adj = applySpreadFromCatalog(sym, pos, n(lp.bid), n(lp.ask));
-    const curPrice = pos.side === 'buy' ? n(_adj.bid || lp.bid) : n(_adj.ask || lp.ask);
-    const entryPrice = n(pos.entryPrice || pos.avgPrice);
-    const priceDiff = pos.side === 'buy' ? curPrice - entryPrice : entryPrice - curPrice;
-    const ex = (pos.exchange || '').toUpperCase();
-    const isIndian = ex === 'NSE' || ex === 'BSE' || ex === 'NFO' || ex === 'BFO' || ex === 'MCX' ||
-      sym.includes('NIFTY') || sym.includes('BANKNIFTY') || sym.includes('SENSEX');
-    let pnl: number;
-    if (isIndian) {
-      const qty = n(pos.quantity || (pos.volume * (pos.lotSize || 1)));
-      pnl = priceDiff * qty;
-    } else {
-      const vol = n(pos.volume);
-      let cs = 100000;
-      if (sym.includes('BTC') || sym.includes('ETH')) cs = 1;
-      else if (sym === 'XAUUSD' || sym === 'XPTUSD') cs = 100;
-      else if (sym === 'XAGUSD') cs = 5000;
-      else if (sym.includes('US100') || sym.includes('US30') || sym.includes('US2000')) cs = 1;
-      const pnlUSD = sym.includes('JPY') ? (priceDiff * 100000 * vol) / 100 : priceDiff * cs * vol;
-      // Convert forex P&L (USD) to INR for display (wallet is INR-only)
-      pnl = pnlUSD * usdInrRate;
-    }
-    if (!isNaN(pnl) && isFinite(pnl)) totalPnl += pnl;
-  });
-
-  if (totalMargin > 0) lastGoodMarginRef.current = totalMargin;
-  const effectiveMargin = (totalMargin === 0 && positions.length > 0 && lastGoodMarginRef.current > 0)
-    ? lastGoodMarginRef.current : totalMargin;
-
-  const mg = positions.length > 0 ? effectiveMargin : n(wallet?.margin);
-  const eq = bal + cr + totalPnl;
-  const fm = Math.max(0, eq - mg);
-  const pctChange = bal > 0 ? ((eq - bal) / bal) * 100 : 0;
+  // ── Live PnL + equity — memoized on prices + positions so the heavy
+  // per-position loop doesn't run on every unrelated state change.
+  const { totalPnl, totalMargin, bal, cr, eq, fm, mg, pctChange } = useMemo(() => {
+    const _bal = n(wallet?.balance ?? user?.wallet?.balance);
+    const _cr = n(wallet?.credit);
+    let _totalPnl = 0;
+    let _totalMargin = 0;
+    positions.forEach((pos: any) => {
+      if (pos.status === 'closed') return;
+      _totalMargin += n(pos.marginUsed || pos.margin);
+      const sym = pos.symbol || '';
+      const lp = prices[sym];
+      if (!lp || (!lp.bid && !lp.ask)) return;
+      const _adj = applySpreadFromCatalog(sym, pos, n(lp.bid), n(lp.ask));
+      const curPrice = pos.side === 'buy' ? n(_adj.bid || lp.bid) : n(_adj.ask || lp.ask);
+      const entryPrice = n(pos.entryPrice || pos.avgPrice);
+      const priceDiff = pos.side === 'buy' ? curPrice - entryPrice : entryPrice - curPrice;
+      const ex = (pos.exchange || '').toUpperCase();
+      const isIndian = ex === 'NSE' || ex === 'BSE' || ex === 'NFO' || ex === 'BFO' || ex === 'MCX' ||
+        sym.includes('NIFTY') || sym.includes('BANKNIFTY') || sym.includes('SENSEX');
+      let pnl: number;
+      if (isIndian) {
+        const qty = n(pos.quantity || (pos.volume * (pos.lotSize || 1)));
+        pnl = priceDiff * qty;
+      } else {
+        const vol = n(pos.volume);
+        let cs = 100000;
+        if (sym.includes('BTC') || sym.includes('ETH')) cs = 1;
+        else if (sym === 'XAUUSD' || sym === 'XPTUSD') cs = 100;
+        else if (sym === 'XAGUSD') cs = 5000;
+        else if (sym.includes('US100') || sym.includes('US30') || sym.includes('US2000')) cs = 1;
+        const pnlUSD = sym.includes('JPY') ? (priceDiff * 100000 * vol) / 100 : priceDiff * cs * vol;
+        pnl = pnlUSD * usdInrRate;
+      }
+      if (!isNaN(pnl) && isFinite(pnl)) _totalPnl += pnl;
+    });
+    if (_totalMargin > 0) lastGoodMarginRef.current = _totalMargin;
+    const effectiveMargin = (_totalMargin === 0 && positions.length > 0 && lastGoodMarginRef.current > 0)
+      ? lastGoodMarginRef.current : _totalMargin;
+    const _mg = positions.length > 0 ? effectiveMargin : n(wallet?.margin);
+    const _eq = _bal + _cr + _totalPnl;
+    const _fm = Math.max(0, _eq - _mg);
+    const _pctChange = _bal > 0 ? ((_eq - _bal) / _bal) * 100 : 0;
+    return { totalPnl: _totalPnl, totalMargin: _totalMargin, bal: _bal, cr: _cr, eq: _eq, fm: _fm, mg: _mg, pctChange: _pctChange };
+  }, [positions, prices, wallet, usdInrRate, user?.wallet?.balance]);
 
   // INR-only formatter
-  const fmtINR = (v: number) => `₹${v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const fmtUSD = fmtINR; // alias for existing call sites
+  const fmtINR = useCallback((v: number) => `₹${v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, []);
+  const fmtUSD = fmtINR;
 
-  // Wallet is INR-only. totalPnl above already converts forex USD→INR.
-
-  // Per-position P/L for display
-  const calcLivePnl = (pos: any) => {
+  // Per-position P/L — memoized so it isn't recreated on every render.
+  const calcLivePnl = useCallback((pos: any) => {
     const sym = pos.symbol || '';
     const lp = prices[sym];
     if (!lp || (!lp.bid && !lp.ask)) return n(pos.profit);
@@ -199,10 +208,9 @@ const HomeScreen: React.FC = () => {
     else if (sym === 'XAUUSD' || sym === 'XPTUSD') cs = 100;
     else if (sym === 'XAGUSD') cs = 5000;
     else if (sym.includes('US100') || sym.includes('US30') || sym.includes('US2000')) cs = 1;
-    // Forex P&L in USD → convert to INR (wallet is INR-only)
     const pnlUSD = sym.includes('JPY') ? (priceDiff * 100000 * vol) / 100 : priceDiff * cs * vol;
     return pnlUSD * usdInrRate;
-  };
+  }, [prices, usdInrRate, applySpreadFromCatalog]);
 
   const formatTime = (ts: number) => {
     const diff = Math.floor((Date.now() / 1000 - ts) / 60);
@@ -211,8 +219,10 @@ const HomeScreen: React.FC = () => {
     return new Date(ts * 1000).toLocaleDateString();
   };
 
-  // TradingView heatmap HTML — uses forex-heat-map widget for clean fill
-  const heatmapHtml = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><style>*{margin:0;padding:0}html,body{width:100%;height:100%;overflow:hidden;background:transparent}</style></head><body><div class="tradingview-widget-container"><div class="tradingview-widget-container__widget"></div><script src="https://s3.tradingview.com/external-embedding/embed-widget-stock-heatmap.js" async>{"exchanges":[],"dataSource":"SPX500","grouping":"sector","blockSize":"market_cap_basic","blockColor":"change","locale":"en","symbolUrl":"","colorTheme":"${isDark ? 'dark' : 'light'}","hasTopBar":false,"isDataSetEnabled":false,"isZoomEnabled":false,"hasSymbolTooltip":true,"isTransparent":true,"width":"100%","height":"100%"}</script></div></body></html>`;
+  // TradingView heatmap HTML — memoized so it isn't rebuilt on every
+  // price-tick render (isDark almost never changes at runtime).
+  const heatmapHtml = useMemo(() => `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><style>*{margin:0;padding:0}html,body{width:100%;height:100%;overflow:hidden;background:transparent}</style></head><body><div class="tradingview-widget-container"><div class="tradingview-widget-container__widget"></div><script src="https://s3.tradingview.com/external-embedding/embed-widget-stock-heatmap.js" async>{"exchanges":[],"dataSource":"SPX500","grouping":"sector","blockSize":"market_cap_basic","blockColor":"change","locale":"en","symbolUrl":"","colorTheme":"${isDark ? 'dark' : 'light'}","hasTopBar":false,"isDataSetEnabled":false,"isZoomEnabled":false,"hasSymbolTooltip":true,"isTransparent":true,"width":"100%","height":"100%"}</script></div></body></html>`
+  , [isDark]);
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg0 }]} edges={['top']}>

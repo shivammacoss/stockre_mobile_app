@@ -114,21 +114,12 @@ const OrdersScreen: React.FC = () => {
     return `${sign}₹${abs.toFixed(2)}`;
   }, []);
 
-  useEffect(() => { loadData(); }, [user?.id]);
-
-  // Re-fetch on socket position updates
-  useEffect(() => {
-    const unsub = onPositionUpdate(() => { loadData(); });
-    return unsub;
-  }, [onPositionUpdate]);
-
-  const loadData = async () => {
+  // Lightweight fetch: positions, pending, wallet, active trades.
+  // Called on every socket position update — must NOT include the
+  // paginated history loop or it hammers the server on every price tick.
+  const loadPositions = useCallback(async () => {
     if (!user?.id && !user?.oderId) return;
     const uid = user?.oderId || user?.id;
-    // Each call gets its own catch — a single failure (e.g. an empty
-    // positions endpoint that 4xx's) used to take Promise.all down with
-    // it, leaving wallet.balance at the initial 0 and the ledger card
-    // showing ₹0.00 even though the user actually has funds.
     const [posRes, pendRes, walRes, rateRes, activeRes] = await Promise.all([
       tradingAPI.getAllPositions(uid).catch(() => null),
       tradingAPI.getPendingOrders(uid).catch(() => null),
@@ -140,21 +131,20 @@ const OrdersScreen: React.FC = () => {
     if (pendRes?.data?.orders) setPendingOrders(pendRes.data.orders);
     if (walRes?.data?.wallet) setWallet(walRes.data.wallet);
     if (activeRes?.data?.trades) setActiveTrades(activeRes.data.trades);
-    {
-      const rd: any = rateRes?.data;
-      const r = Number(rd?.USD_TO_INR ?? rd?.rates?.USD_TO_INR ?? rd?.rate);
-      if (Number.isFinite(r) && r > 0) setUsdInrRate(r);
-    }
+    const rd: any = rateRes?.data;
+    const r = Number(rd?.USD_TO_INR ?? rd?.rates?.USD_TO_INR ?? rd?.rate);
+    if (Number.isFinite(r) && r > 0) setUsdInrRate(r);
+  }, [user?.id, user?.oderId]);
 
-    // History: page through ALL trades (server defaults limit=50, web
-    // does the same loop). Then collapse the synthetic 'history parent'
-    // Trade + its child leg trades — the engine writes both for every
-    // fully-closed position; without dedup the user sees each trade
-    // twice (parent summary + the leg close).
+  // Expensive history fetch: pages through ALL trade records.
+  // Only called when the user opens the History tab or does a
+  // pull-to-refresh — NOT on every socket update.
+  const loadHistory = useCallback(async () => {
+    if (!user?.id && !user?.oderId) return;
+    const uid = user?.oderId || user?.id;
     try {
       let all: any[] = [];
       let page = 1;
-      // Hard cap pages so a corrupt server response can't loop forever.
       while (page <= 50) {
         const res = await tradingAPI.getTradeHistory(uid, page, 100);
         const rows = res?.data?.trades || [];
@@ -163,23 +153,46 @@ const OrdersScreen: React.FC = () => {
         if (!res.data?.pagination?.hasMore) break;
         page += 1;
       }
-      // First pass: collect every groupId that has a parent row.
       const parentGroupIds = new Set<string>();
       for (const t of all) {
         if (t?.isHistoryParent && t?.groupId) parentGroupIds.add(String(t.groupId));
       }
-      // Second pass: keep parents + standalone trades; drop child legs
-      // whose groupId is already represented by a parent.
       const deduped = all.filter((t) => {
         if (t?.isHistoryParent) return true;
         if (t?.groupId && parentGroupIds.has(String(t.groupId))) return false;
         return true;
       });
       setHistory(deduped);
-    } catch (_) {
-      /* leave previous history in place on transient failure */
-    }
-  };
+    } catch (_) { /* leave previous history in place on transient failure */ }
+  }, [user?.id, user?.oderId]);
+
+  // Full refresh (pull-to-refresh): positions + history together.
+  const loadData = useCallback(async () => {
+    await Promise.all([loadPositions(), loadHistory()]);
+  }, [loadPositions, loadHistory]);
+
+  useEffect(() => { loadPositions(); }, [user?.id]);
+
+  // On tab switch to 'history', fetch (or refresh) history once.
+  useEffect(() => {
+    if (tab === 'history') loadHistory();
+  }, [tab]);
+
+  // Socket updates: apply walletUpdate instantly from payload;
+  // for position changes refresh positions (not history).
+  useEffect(() => {
+    const unsub = onPositionUpdate((data: any) => {
+      if (data?.type === 'walletUpdate' && data?.wallet) {
+        const w = data.wallet;
+        if (w?.balance != null || w?.margin != null) {
+          setWallet((prev: any) => ({ ...(prev || {}), ...w }));
+        }
+      } else {
+        loadPositions();
+      }
+    });
+    return unsub;
+  }, [onPositionUpdate, loadPositions]);
 
   const onRefresh = async () => { setRefreshing(true); await loadData(); setRefreshing(false); };
 
@@ -208,7 +221,7 @@ const OrdersScreen: React.FC = () => {
         takeProfit: editTP === '' ? null : parseFloat(editTP),
       });
       setEditModalOpen(false);
-      loadData();
+      loadPositions();
     } catch (e: any) {
       Alert.alert('Error', e?.response?.data?.error || e.message);
     } finally {
@@ -247,7 +260,7 @@ const OrdersScreen: React.FC = () => {
         spreadPreApplied: true,
       } as any);
       setCloseModalOpen(false);
-      loadData();
+      loadPositions();
     } catch (e: any) {
       Alert.alert('Error', e?.response?.data?.error || e.message);
     } finally {
@@ -329,7 +342,7 @@ const OrdersScreen: React.FC = () => {
                 currentPrice: px,
                 closeReason: 'user',
               });
-              loadData();
+              loadPositions();
             } catch (e: any) {
               Alert.alert('Error', e?.response?.data?.error || e.message);
             }
@@ -373,7 +386,7 @@ const OrdersScreen: React.FC = () => {
                 closeReason: 'user',
               });
               await refetchLegs();
-              loadData();
+              loadPositions();
             } catch (e: any) {
               Alert.alert('Error', e?.response?.data?.error || e.message);
             }
@@ -409,7 +422,7 @@ const OrdersScreen: React.FC = () => {
         try {
           const uid = user?.oderId || user?.id || '';
           await tradingAPI.cancelPendingOrder({ userId: uid, orderId: order.oderId || order._id, mode: order.mode || 'netting' });
-          loadData();
+          loadPositions();
         } catch (e: any) { Alert.alert('Error', e?.response?.data?.error || e.message); }
       }},
     ]);
@@ -707,7 +720,7 @@ const OrdersScreen: React.FC = () => {
       <View style={[styles.tabBar, { backgroundColor: colors.bg3, borderColor: colors.border }]}>
         {TABS.map(t => {
           const active = tab === t.key;
-          const count = t.key === 'open' ? positions.length : t.key === 'pending' ? pendingOrders.length : t.key === 'history' ? history.length : cancelled.length;
+          const count = t.key === 'open' ? positions.length : t.key === 'active' ? activeTrades.length : t.key === 'pending' ? pendingOrders.length : t.key === 'history' ? history.length : cancelled.length;
           return (
             <TouchableOpacity
               key={t.key}
