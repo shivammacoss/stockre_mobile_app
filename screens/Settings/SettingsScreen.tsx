@@ -86,11 +86,17 @@ const SettingsScreen: React.FC = () => {
 
   useEffect(() => { loadAll(); }, [user?.id]);
 
-  // Live position updates → recompute stats
+  // Live position/wallet updates → recompute stats
   useEffect(() => {
-    const unsub = onPositionUpdate(() => { fetchWalletAndPositions(); });
+    const unsub = onPositionUpdate((data: any) => {
+      if (data?.type === 'walletUpdate' && data?.wallet) {
+        setWallet((prev: any) => ({ ...prev, ...data.wallet }));
+      } else {
+        fetchWalletAndPositions();
+      }
+    });
     return unsub;
-  }, [onPositionUpdate]);
+  }, [onPositionUpdate]); // fetchWalletAndPositions is useCallback — stable ref, no need in deps
 
   // Poll wallet every 15s (mirrors web's pull-based wallet updates)
   useEffect(() => {

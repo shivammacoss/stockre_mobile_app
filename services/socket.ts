@@ -256,6 +256,8 @@ class SocketService {
           'info'
         );
       } catch (_) {}
+      // Refresh all screens that watch positions/wallet
+      this.positionListeners.forEach(cb => { try { cb({ type: 'expirySettlement', ...data }); } catch (_) {} });
     });
 
     // marginCall / stopOut were previously console.log only — users had
@@ -279,11 +281,20 @@ class SocketService {
       try {
         themedAlert(
           '🛑 Stop Out',
-          data?.message || `Stop Out: positions closed at margin level ${data?.marginLevel ?? '—'}%.`,
+          data?.message || `Stop Out: positions closed at loss ${data?.lossPercent ?? '—'}% of balance.`,
           [{ text: 'OK' }],
           'error'
         );
       } catch (_) {}
+      // Trigger position listeners so Orders/Wallet/Settings screens refresh immediately
+      this.positionListeners.forEach(cb => { try { cb({ type: 'stopOut', ...data }); } catch (_) {} });
+    });
+
+    // walletUpdate: server pushes fresh wallet after SL/TP/stop-out/expiry closes.
+    // Fire position listeners so any screen using onPositionUpdate also refreshes wallet.
+    this.socket.on('walletUpdate', (data: any) => {
+      if (__DEV__) console.log('[Socket] walletUpdate');
+      this.positionListeners.forEach(cb => { try { cb({ type: 'walletUpdate', wallet: data }); } catch (_) {} });
     });
 
     // Ledger-balance close + per-fill SL/TP closes — also surface so

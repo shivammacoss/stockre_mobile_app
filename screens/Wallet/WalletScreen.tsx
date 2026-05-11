@@ -115,11 +115,19 @@ const WalletScreen: React.FC = () => {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [loadWallet, loadPositions, loadPaymentMethods]);
 
-  // Re-fetch positions on position update from socket
+  // Re-fetch positions + wallet on socket events (SL/TP/stop-out/expiry).
+  // walletUpdate type: apply server wallet instantly without an extra API call.
   useEffect(() => {
-    const unsub = onPositionUpdate(() => { loadPositions(); });
+    const unsub = onPositionUpdate((data: any) => {
+      if (data?.type === 'walletUpdate' && data?.wallet) {
+        setWallet((prev: any) => ({ ...prev, ...data.wallet }));
+      } else {
+        loadPositions();
+        loadWallet();
+      }
+    });
     return unsub;
-  }, [onPositionUpdate, loadPositions]);
+  }, [onPositionUpdate, loadPositions, loadWallet]);
 
   // Debounced eligible bonus fetch (matches web Fix 21c)
   useEffect(() => {
