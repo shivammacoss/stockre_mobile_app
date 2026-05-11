@@ -144,7 +144,7 @@ function isExpiredFnO(category: string, expiryRaw?: string | number | Date | nul
 
 const MarketScreen: React.FC = () => {
   const { user } = useAuth();
-  const { prices, isConnected } = useSocket();
+  const { prices, isConnected, getPrice, mergePrice } = useSocket();
   const { colors } = useTheme();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
@@ -459,6 +459,21 @@ const MarketScreen: React.FC = () => {
           merged[activeCat] = list;
           return merged;
         });
+        // Seed price immediately — first Zerodha WS tick can take
+        // several seconds after subscription. A REST quote call shows
+        // the current LTP right away so the user sees a price instead
+        // of '---' while waiting for the first tick.
+        if (inst.exchange && (inst.tradingsymbol || inst.symbol)) {
+          instrumentsAPI.getZerodhaQuote(inst.exchange, inst.tradingsymbol || inst.symbol)
+            .then((qRes: any) => {
+              const q = qRes.data?.quote || qRes.data;
+              const ltp = Number(q?.last_price || q?.lastPrice || q?.ltp || 0);
+              if (ltp > 0) {
+                mergePrice(inst.symbol, { lastPrice: ltp, bid: ltp, ask: ltp });
+              }
+            })
+            .catch(() => {});
+        }
       } else {
         Alert.alert('Error', res.data?.error || 'Failed to add instrument');
       }
@@ -688,8 +703,11 @@ const MarketScreen: React.FC = () => {
   // (mainly option contracts deep-linked from OptionChainScreen). Keyed
   // by tradingsymbol so multiple legs can coexist; live WS ticks always
   // win when present.
+  // getPrice() reads the module-level priceCache directly (no 100 ms
+  // throttle delay), so the order sheet shows a live price instantly
+  // even if the throttled `prices` state hasn't caught up yet.
   const orderPrice =
-    prices[orderSymbol] ||
+    getPrice(orderSymbol) ||
     seedPrices[orderSymbol] ||
     undefined;
 
@@ -765,7 +783,10 @@ const MarketScreen: React.FC = () => {
   const renderInstrument = ({ item: inst }: { item: any }) => {
     const sym = inst.symbol || '';
     const name = inst.name || '';
-    const p = prices[sym];
+    // getPrice() hits the live priceCache first (no throttle) so newly
+    // added symbols show a price as soon as the first tick arrives,
+    // rather than waiting for the next 100ms setPrices() flush.
+    const p = getPrice(sym);
     const rawBid = p?.bid || p?.lastPrice || p?.mark_price || 0;
     const rawAsk = p?.ask || p?.lastPrice || p?.mark_price || 0;
     const adj = applySpreadFromCatalog(sym, inst, rawBid, rawAsk);

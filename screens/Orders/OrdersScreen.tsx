@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
   RefreshControl, Alert, TextInput, Modal, ScrollView, ActivityIndicator,
@@ -59,6 +59,7 @@ const OrdersScreen: React.FC = () => {
   const [activeTrades, setActiveTrades] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [usdInrRate, setUsdInrRate] = useState(83);
+  const wasConnectedRef = useRef(false);
 
   // History date filter — quick range buttons (7d / 30d / 90d / All).
   // Mirrors the web OrdersPage filter; mobile previously had no
@@ -172,6 +173,15 @@ const OrdersScreen: React.FC = () => {
   }, [loadPositions, loadHistory]);
 
   useEffect(() => { loadPositions(); }, [user?.id]);
+
+  // When socket connects after login, re-fetch in case the initial
+  // mount fetch failed (server cold-start / brief network blip).
+  useEffect(() => {
+    if (isConnected && !wasConnectedRef.current) {
+      loadPositions();
+    }
+    wasConnectedRef.current = isConnected;
+  }, [isConnected, loadPositions]);
 
   // On tab switch to 'history', fetch (or refresh) history once.
   useEffect(() => {

@@ -49,6 +49,7 @@ const HomeScreen: React.FC = () => {
   const [newsLoading, setNewsLoading] = useState(true);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastGoodMarginRef = useRef(0);
+  const wasConnectedRef = useRef(false);
 
   // Spread catalog (segment + per-script overrides) so Market Overview
   // shows the same spread-adjusted bid/ask the order ticket trades on.
@@ -115,6 +116,16 @@ const HomeScreen: React.FC = () => {
     }, 4000);
     return () => clearInterval(id);
   }, [banners.length]);
+
+  // When socket connects (or reconnects after a drop), ensure we have
+  // fresh data — the initial mount fetch may have failed if the server
+  // was still starting up or the network wasn't ready yet.
+  useEffect(() => {
+    if (isConnected && !wasConnectedRef.current) {
+      loadData();
+    }
+    wasConnectedRef.current = isConnected;
+  }, [isConnected, loadData]);
 
   // Socket event handler — mirrors web UserLayout behaviour:
   //   walletUpdate  → apply wallet directly from payload (zero API latency)
