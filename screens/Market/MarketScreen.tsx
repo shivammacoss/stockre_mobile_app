@@ -208,6 +208,17 @@ const MarketScreen: React.FC = () => {
     });
   }, []);
 
+  // Refetch wallet every time the order sheet opens, so the
+  // "Available Margin" line always shows the latest balance — covers
+  // the case where useFocusEffect didn't fire (e.g. WalletScreen was
+  // opened as a modal over Market without losing focus, or the
+  // balance changed mid-session from another device).
+  useEffect(() => {
+    if (!orderSheetOpen) return;
+    fetchWallet();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderSheetOpen, user?.id, user?.oderId]);
+
   const sheetPanResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
