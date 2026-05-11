@@ -24,6 +24,48 @@ function isIndianPos(pos: any): boolean {
   return false;
 }
 
+// ── P/L reconciliation (mirrors web's netProfitInrIndianNettingClose) ─────────
+// Many older Indian SELL-position close trades have stored profit with the
+// wrong sign (positive & negative swapped) because the legacy engine used
+// (closePrice − entryPrice) × qty regardless of position side. The web
+// fixes this by recalculating from closePrice/entryPrice/quantity using the
+// exit-side formula. We replicate that here so the APK total matches the web.
+function isIndianSymbolLikely(sym: string): boolean {
+  const s = String(sym || '').trim();
+  if (!s || s.length > 22) return false;
+  if (s.includes('/')) return false;
+  const fx = ['USD','EUR','GBP','JPY','AUD','CAD','CHF','NZD','BTC','ETH','XAU','XAG','XPT','XPD'];
+  return !fx.some((x) => s.includes(x));
+}
+
+function reconcileHistoryProfitInr(t: any, usdInrRate: number): number {
+  if (!t) return 0;
+  // Indian netting close (or synthetic parent): recalculate gross from prices
+  // to avoid stored-profit sign errors on legacy trades.
+  const isIndian = isIndianSymbolLikely(t.symbol);
+  const isClose = t.mode === 'netting' && (t.type === 'close' || t.isHistoryParent === true);
+  if (isIndian && isClose) {
+    const qty = Number(t.quantity) || (Number(t.volume) * Number(t.lotSize || 1));
+    const entry = Number(t.entryPrice);
+    const close = Number(t.closePrice);
+    if (qty > 0 && entry > 0 && close > 0) {
+      const side = String(t.side || '').toLowerCase();
+      let gross: number | null = null;
+      if (side === 'sell') gross = (close - entry) * qty; // exit-sell = closed a long
+      if (side === 'buy')  gross = (entry - close) * qty; // exit-buy  = closed a short
+      if (gross != null) {
+        const commInr = Number(t.commissionInr || t.commission) || 0;
+        const swapInr = Number(t.swap || 0) * (usdInrRate || 83);
+        return gross - commInr + swapInr;
+      }
+    }
+  }
+  // Non-Indian: engine stores profit in INR (converted at close since the
+  // "forex converted at line 3508" fix). Use as-is.
+  return Number(t.profit) || 0;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Mode badge: N=Netting, B=Binary
 const MODE_META: Record<string, { letter: string; color: string; bg: string }> = {
   netting: { letter: 'N', color: '#3b82f6', bg: 'rgba(59,130,246,0.15)' },
@@ -581,7 +623,7 @@ const OrdersScreen: React.FC = () => {
   };
 
   const renderCard = ({ item: pos, index }: { item: any; index: number }) => {
-    const livePnl = (tab === 'open' || tab === 'active') ? calcLivePnl(pos) : (pos.profit || 0);
+    const livePnl = (tab === 'open' || tab === 'active') ? calcLivePnl(pos) : reconcileHistoryProfitInr(pos, usdInrRate);
     const displaySide = tab === 'history' ? positionSideForDisplay(pos) : (pos.side || '');
     const lp = prices[pos.symbol];
     const liveCurrentPrice = lp
@@ -838,10 +880,10 @@ const OrdersScreen: React.FC = () => {
           Reads trade.profit (already INR per recent engine fix). */}
       {tab === 'history' && history.length > 0 && (() => {
         const totalRealizedInr = filteredHistory.reduce(
-          (s, t) => s + (Number(t?.profit) || 0), 0
+          (s, t) => s + reconcileHistoryProfitInr(t, usdInrRate), 0
         );
-        const wins = filteredHistory.filter((t) => (Number(t?.profit) || 0) > 0).length;
-        const losses = filteredHistory.filter((t) => (Number(t?.profit) || 0) < 0).length;
+        const wins = filteredHistory.filter((t) => reconcileHistoryProfitInr(t, usdInrRate) > 0).length;
+        const losses = filteredHistory.filter((t) => reconcileHistoryProfitInr(t, usdInrRate) < 0).length;
         const RANGES: Array<{ key: 7 | 30 | 90 | 0; label: string }> = [
           { key: 7, label: '7D' },
           { key: 30, label: '30D' },
