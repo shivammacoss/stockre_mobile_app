@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
   RefreshControl, Alert, TextInput, Modal, ScrollView, ActivityIndicator,
@@ -484,21 +484,35 @@ const OrdersScreen: React.FC = () => {
   // (no filter); otherwise filter to last N days from now using
   // executedAt / closeTime / closedAt as the timestamp signal (server
   // sets executedAt on every closed Trade row).
-  const filteredHistory = (() => {
+  const filteredHistory = useMemo(() => {
     if (!historyRange) return history;
     const cutoff = Date.now() - historyRange * 24 * 60 * 60 * 1000;
     return history.filter((t) => {
       const ts = new Date(t?.executedAt || t?.closeTime || t?.closedAt || 0).getTime();
       return Number.isFinite(ts) && ts >= cutoff;
     });
-  })();
+  }, [history, historyRange]);
 
-  const getData = () =>
-    tab === 'open' ? positions
-    : tab === 'active' ? activeTrades
-    : tab === 'pending' ? pendingOrders
-    : tab === 'history' ? filteredHistory
-    : cancelled;
+  const listData = useMemo(
+    () =>
+      tab === 'open' ? positions
+      : tab === 'active' ? activeTrades
+      : tab === 'pending' ? pendingOrders
+      : tab === 'history' ? filteredHistory
+      : cancelled,
+    [tab, positions, activeTrades, pendingOrders, filteredHistory, cancelled]
+  );
+
+  // History summary stats — only recompute when the filtered list or rate changes,
+  // NOT on every price tick (price has no effect on closed-trade P/L).
+  const historyStats = useMemo(() => {
+    const totalRealizedInr = filteredHistory.reduce(
+      (s, t) => s + reconcileHistoryProfitInr(t, usdInrRate), 0
+    );
+    const wins = filteredHistory.filter((t) => reconcileHistoryProfitInr(t, usdInrRate) > 0).length;
+    const losses = filteredHistory.filter((t) => reconcileHistoryProfitInr(t, usdInrRate) < 0).length;
+    return { totalRealizedInr, wins, losses };
+  }, [filteredHistory, usdInrRate]);
 
   // Live P/L from socket prices (same formula as web MarketPage calculateProfit).
   // For each side we want the price that the user would close AT — bid for
@@ -520,7 +534,7 @@ const OrdersScreen: React.FC = () => {
   // via the live USD/INR rate. Previous build summed USD floating
   // P/L into the M2M tile as if it were already INR — XAUUSD trades
   // showed ~1/95th of their real ₹ P/L.
-  const calcLivePnl = (pos: any) => {
+  const calcLivePnl = useCallback((pos: any) => {
     const isIndian = ['NSE','BSE','NFO','BFO','MCX','CDS'].includes((pos.exchange||'').toUpperCase());
     const lp = prices[pos.symbol];
     if (!lp) {
@@ -549,34 +563,39 @@ const OrdersScreen: React.FC = () => {
     else if (sym.includes('US100')||sym.includes('US30')||sym.includes('US500')||sym.includes('NAS')) cs = 1;
     const pnlUsd = sym.includes('JPY') ? (diff * 100000 * vol) / 100 : diff * cs * vol;
     return pnlUsd * (Number(usdInrRate) || 83);
-  };
+  }, [prices, usdInrRate, applyOrdersSpread]);
 
   // calcLivePnl returns each position's P/L in its native currency — INR for
   // Indian symbols, USD for international. All displayed in INR.
-  const totalPnlInr = positions.reduce((s, p) => {
-    const raw = calcLivePnl(p);
-    return s + raw; // already INR (server settles in INR)
-  }, 0);
+  // useMemo: recomputes only when prices/positions/usdInrRate change.
+  const totalPnlInr = useMemo(
+    () => positions.reduce((s, p) => s + calcLivePnl(p), 0),
+    [positions, calcLivePnl]
+  );
   const totalPnl = totalPnlInr;
-  const marginUsed = positions.reduce((s, p) => s + Number(p.marginUsed || p.margin || 0), 0);
+
+  // marginUsed / cfTotal / cfExtraNeeded depend only on positions, NOT prices —
+  // wrap in useMemo so they don't recompute on every price tick.
+  const marginUsed = useMemo(
+    () => positions.reduce((s, p) => s + Number(p.marginUsed || p.margin || 0), 0),
+    [positions]
+  );
+  const cfTotal = useMemo(
+    () => positions.reduce((s, p) => s + (Number(p.cfMarginRequired) || 0), 0),
+    [positions]
+  );
+  const cfExtraNeeded = useMemo(
+    () => positions.reduce((s, p) => {
+      const cf = Number(p.cfMarginRequired) || 0;
+      if (cf <= 0) return s;
+      const extra = cf - Number(p.marginUsed || 0);
+      return s + (extra > 0 ? extra : 0);
+    }, 0),
+    [positions]
+  );
   const ledgerBalance = Number(wallet?.balance || 0);
   // Available = deposited funds minus margin locked in open trades, plus live M2M.
-  // All three are in INR here.
   const marginAvailable = ledgerBalance - marginUsed + totalPnlInr;
-
-  // CF totals — only set on positions whose segment auto-square-offs
-  // (Indian NSE/BSE/MCX/CDS); always-on segments leave cfMarginRequired
-  // null on the server, so the reduce naturally skips them.
-  const cfTotal = positions.reduce(
-    (s, p) => s + (Number(p.cfMarginRequired) || 0), 0
-  );
-  const cfExtraNeeded = positions.reduce((s, p) => {
-    const cf = Number(p.cfMarginRequired) || 0;
-    if (cf <= 0) return s;
-    const cur = Number(p.marginUsed) || 0;
-    const extra = cf - cur;
-    return s + (extra > 0 ? extra : 0);
-  }, 0);
   const showCfRow = cfTotal > 0;
 
   const remarkColor = (r: string) => {
@@ -879,11 +898,7 @@ const OrdersScreen: React.FC = () => {
           see the rolled-up number without having to scroll/sum manually.
           Reads trade.profit (already INR per recent engine fix). */}
       {tab === 'history' && history.length > 0 && (() => {
-        const totalRealizedInr = filteredHistory.reduce(
-          (s, t) => s + reconcileHistoryProfitInr(t, usdInrRate), 0
-        );
-        const wins = filteredHistory.filter((t) => reconcileHistoryProfitInr(t, usdInrRate) > 0).length;
-        const losses = filteredHistory.filter((t) => reconcileHistoryProfitInr(t, usdInrRate) < 0).length;
+        const { totalRealizedInr, wins, losses } = historyStats;
         const RANGES: Array<{ key: 7 | 30 | 90 | 0; label: string }> = [
           { key: 7, label: '7D' },
           { key: 30, label: '30D' },
@@ -937,11 +952,16 @@ const OrdersScreen: React.FC = () => {
       {/* Card list */}
       {(
         <FlatList
-          data={getData()}
+          data={listData}
           renderItem={renderCard}
           keyExtractor={(item, idx) => `${item.oderId || item._id || 'row'}-${item.groupId || item.tradeId || ''}-${idx}`}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.blue} />}
           contentContainerStyle={{ padding: 12, paddingBottom: 120 }}
+          removeClippedSubviews
+          windowSize={5}
+          maxToRenderPerBatch={8}
+          initialNumToRender={10}
+          updateCellsBatchingPeriod={50}
           ListEmptyComponent={
             <View style={{ alignItems: 'center', paddingVertical: 48 }}>
               <Text style={{ fontSize: 36, marginBottom: 8 }}>📋</Text>

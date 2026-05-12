@@ -28,18 +28,17 @@ export const SocketProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         setIsConnected(connected);
       });
 
-      // Throttle price updates to keep React re-renders bounded — but
-      // tight enough that the Orders screen P/L stays in step with the
-      // live price (web has no throttle and was visibly more accurate
-      // than mobile at the previous 500ms window). 100ms is ~10 fps,
-      // which the JS thread + Reanimated animation budget handle fine.
+      // Throttle price updates to keep React re-renders bounded.
+      // 300ms (~3 fps) is imperceptible to the human eye for price displays
+      // but cuts the JS thread render budget by ~67% vs 100ms, which
+      // frees the single JS thread for touch events and trade execution.
       const unsubPrices = socketService.onPriceUpdate((newPrices) => {
         latestPricesRef.current = newPrices;
         if (!priceThrottleRef.current) {
           priceThrottleRef.current = setTimeout(() => {
             setPrices({ ...latestPricesRef.current });
             priceThrottleRef.current = null;
-          }, 100);
+          }, 300);
         }
       });
 

@@ -188,9 +188,9 @@ export const tradingAPI = {
   cancelOrder: (data: { orderId: string; userId: string; mode?: string }) =>
     api.post('/api/orders/cancel', data),
 
-  // Close single leg (netting)
+  // Close single leg (netting) — server route is /api/netting/close-leg
   closePositionLeg: (data: { userId: string; tradeId: string; currentPrice: number; closeReason?: string }) =>
-    api.post('/api/positions/close-leg', data),
+    api.post('/api/netting/close-leg', data),
 
   // Modify SL/TP on a position. Server registers this as PUT — POST
   // (the previous spelling) silently 404s and SL/TP edits never land.
